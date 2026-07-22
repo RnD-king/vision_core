@@ -44,6 +44,8 @@ build/
 Build/
 build-*/
 
+install/
+
 # CMake generated files
 CMakeFiles/
 CMakeCache.txt
