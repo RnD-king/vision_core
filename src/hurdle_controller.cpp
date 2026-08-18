@@ -33,9 +33,25 @@ double HurdleController::Clamp(double value, double low, double high) {
   return std::max(low, std::min(high, value));
 }
 
+double HurdleController::LimitRate(double previous, double target,
+                                   double delta) {
+  return Clamp(target, previous - delta, previous + delta);
+}
+
 HurdleResult HurdleController::Compute(
     const std::optional<ObjectTarget> &hurdle_target, int image_width,
     int image_height, double now_sec, const CameraFeedback &camera_feedback) {
+  return Compute(hurdle_target, image_width, image_height, now_sec,
+                 config_.approach_vx, true, camera_feedback);
+}
+
+HurdleResult HurdleController::Compute(
+    const std::optional<ObjectTarget> &hurdle_target, int image_width,
+    int image_height, double now_sec, double line_vx,
+    bool line_reference_valid, const CameraFeedback &camera_feedback) {
+  if (line_reference_valid && std::isfinite(line_vx) && line_vx > 0.0) {
+    last_tracking_line_vx_ = line_vx;
+  }
   if (mode_ == HurdleMode::kLineFollow &&
       now_sec + kTimeEpsilon < ignore_until_sec_) {
     HurdleResult result;
@@ -52,6 +68,11 @@ HurdleResult HurdleController::Compute(
 
   UpdateTracker(hurdle_target, image_width, image_height);
   if (mode_ == HurdleMode::kLineFollow && tracked_.stable && tracked_.visible) {
+    const double reference_vx =
+        last_tracking_line_vx_ > 0.0 ? last_tracking_line_vx_
+                                     : config_.approach_vx;
+    latched_approach_vx_ =
+        reference_vx * Clamp(config_.approach_speed_scale, 0.0, 1.0);
     mode_ = HurdleMode::kApproach;
     state_enter_sec_ = now_sec;
   }
@@ -70,21 +91,28 @@ HurdleResult HurdleController::Compute(
     result.active = true;
     result.command = tracked_.visible ? ComputeApproachCommand()
                                       : MotionCommand{};
+    last_command_ = result.command;
     const int hits = static_cast<int>(
         std::count(tilt_history_.begin(), tilt_history_.end(), true));
     if (hits >= std::max(1, config_.tilt_trigger_min_hits)) {
+      const double scaled = std::max(0.0, result.command.vx) *
+                            Clamp(config_.tilt_walk_speed_scale, 0.0, 1.0);
+      latched_tilt_vx_ = Clamp(
+          scaled > 0.0 ? scaled : config_.tilt_walk_default_vx,
+          0.0, std::max(0.0, config_.tilt_walk_vx_max));
       mode_ = HurdleMode::kTiltCameraDownAndSlow;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
       result.camera_request = CameraRequest::kDown;
-      result.command = {std::max(0.0, config_.tilt_slow_vx), 0.0, 0.0};
+      result.command = {latched_tilt_vx_, 0.0, 0.0};
+      last_command_ = result.command;
     }
     return result;
   }
   case HurdleMode::kTiltCameraDownAndSlow:
     result.active = true;
     result.camera_request = CameraRequest::kDown;
-    result.command = {std::max(0.0, config_.tilt_slow_vx), 0.0, 0.0};
+    result.command = {latched_tilt_vx_, 0.0, 0.0};
     if (camera_feedback.actual_mode == CameraMode::kDown &&
         camera_feedback.settled) {
       mode_ = HurdleMode::kContactWalk;
@@ -170,7 +198,9 @@ void HurdleController::UpdateTracker(
             SafeDenominator(image_height),
         0.0, 1.0);
     observed.confidence = target->confidence;
-    close = observed.bottom_norm >= config_.tilt_trigger_bottom_norm;
+    const double raw_v_norm = Clamp(
+        target->center_px.v / SafeDenominator(image_height), 0.0, 1.0);
+    close = raw_v_norm >= config_.tilt_trigger_v_norm;
     const double alpha = Clamp(config_.smooth_alpha, 0.0, 1.0);
     if (!has_smoothed_) {
       tracked_ = observed;
@@ -200,12 +230,14 @@ void HurdleController::UpdateTracker(
 }
 
 MotionCommand HurdleController::ComputeApproachCommand() const {
-  const double u_error = tracked_.u_norm - config_.target_u_norm;
+  const double u_error =
+      (tracked_.u_norm - config_.target_u_norm) / 0.5;
+  const double wz_raw =
+      -std::abs(config_.approach_wz_max) *
+      std::tanh(config_.approach_wz_gain * u_error);
   MotionCommand command;
-  command.vx = std::max(0.0, config_.approach_vx);
-  command.wz = Clamp(-config_.approach_wz_gain * u_error,
-                     -std::abs(config_.approach_wz_max),
-                     std::abs(config_.approach_wz_max));
+  command.vx = std::max(0.0, latched_approach_vx_);
+  command.wz = LimitRate(last_command_.wz, wz_raw, config_.approach_dw_max);
   return command;
 }
 
@@ -217,6 +249,10 @@ void HurdleController::ResetToLine(bool clear_ignore) {
   lost_count_ = 0;
   has_smoothed_ = false;
   tracked_ = {};
+  last_command_ = {};
+  latched_approach_vx_ = 0.0;
+  latched_tilt_vx_ = 0.0;
+  if (clear_ignore) last_tracking_line_vx_ = 0.0;
   if (clear_ignore) ignore_until_sec_ = 0.0;
 }
 

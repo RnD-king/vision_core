@@ -187,6 +187,44 @@ VisionLineFeatures vision_line_compute_features(
       previous_in_recovery != 0, vx_prev, wz_prev, cfg));
 }
 
+VisionLineFeatures vision_line_compute_features_v2(
+    const VisionLinePoint *points, int count, int image_width, int image_height,
+    int previous_in_recovery, double vx_prev, double wz_prev,
+    VisionLineFeatureConfig config, VisionLineFeatureState *state) {
+  vision_core::FeatureConfig cfg;
+  cfg.max_centers = config.max_centers;
+  cfg.image_center_u = config.image_center_u;
+  cfg.lookahead_delta_v_px = config.lookahead_delta_v_px;
+  cfg.lookahead_alpha_normal = config.lookahead_alpha_normal;
+  cfg.lookahead_alpha_recovery = config.lookahead_alpha_recovery;
+  cfg.recover_enter_nvis = config.recover_enter_nvis;
+  cfg.recover_exit_nvis = config.recover_exit_nvis;
+  cfg.recover_enter_u = config.recover_enter_u;
+  cfg.recover_exit_u = config.recover_exit_u;
+
+  vision_core::LineFeatureState core_state;
+  vision_core::LineFeatureState *core_state_ptr = nullptr;
+  if (state != nullptr) {
+    core_state.filtered_curve_score = state->filtered_curve_score;
+    core_state.initialized = state->initialized != 0;
+    core_state_ptr = &core_state;
+  }
+  const auto result = vision_core::ComputeLineFeatures(
+      CopyPoints(points, count), image_width, image_height,
+      previous_in_recovery != 0, vx_prev, wz_prev, cfg, core_state_ptr);
+  if (state != nullptr) {
+    state->filtered_curve_score = core_state.filtered_curve_score;
+    state->initialized = core_state.initialized ? 1 : 0;
+  }
+  return FromCore(result);
+}
+
+void vision_line_feature_state_reset(VisionLineFeatureState *state) {
+  if (state == nullptr) return;
+  state->filtered_curve_score = 0.0;
+  state->initialized = 0;
+}
+
 VisionLineControllerHandle vision_line_controller_create(double observation_dt) {
   return new vision_core::LineVelocityController({}, observation_dt);
 }
@@ -356,6 +394,18 @@ VisionHurdleResult vision_hurdle_controller_compute(
       ToCameraFeedback(camera_actual_mode, camera_settled)));
 }
 
+VisionHurdleResult vision_hurdle_controller_compute_v2(
+    VisionHurdleControllerHandle handle, VisionObjectTarget hurdle_target,
+    int image_width, int image_height, double now_sec, double line_vx,
+    int line_reference_valid, int camera_actual_mode, int camera_settled) {
+  auto *controller = static_cast<vision_core::HurdleController *>(handle);
+  if (controller == nullptr) return {};
+  return FromCoreHurdleResult(controller->Compute(
+      ToCoreTarget(hurdle_target), image_width, image_height, now_sec, line_vx,
+      line_reference_valid != 0,
+      ToCameraFeedback(camera_actual_mode, camera_settled)));
+}
+
 void vision_hurdle_controller_reset(VisionHurdleControllerHandle handle) {
   auto *controller = static_cast<vision_core::HurdleController *>(handle);
   if (controller != nullptr) controller->Reset();
@@ -363,6 +413,17 @@ void vision_hurdle_controller_reset(VisionHurdleControllerHandle handle) {
 
 VisionGoalControllerHandle vision_goal_controller_create(void) {
   return new vision_core::GoalController();
+}
+
+VisionGoalPoseObservation vision_goal_pose_from_edge_depths(
+    double left_u_px, double left_depth_m, double right_u_px,
+    double right_depth_m, double fx, double fy, double cx, double cy,
+    double confidence) {
+  const auto pose = vision_core::EstimateGoalPoseFromEdgeDepths(
+      left_u_px, left_depth_m, right_u_px, right_depth_m,
+      vision_core::Intrinsics{fx, fy, cx, cy}, confidence);
+  return {pose.valid ? 1 : 0, pose.x_m, pose.z_m, pose.yaw_rad,
+          pose.confidence};
 }
 
 void vision_goal_controller_destroy(VisionGoalControllerHandle handle) {
@@ -384,6 +445,22 @@ VisionGoalResult vision_goal_controller_compute(
   return FromCoreGoalResult(controller->Compute(
       ToCoreTarget(goal_target), image_width, image_height, now_sec,
       line_reference_valid != 0,
+      ToCameraFeedback(camera_actual_mode, camera_settled)));
+}
+
+VisionGoalResult vision_goal_controller_compute_v2(
+    VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
+    VisionObjectTarget backboard_target, VisionGoalPoseObservation goal_pose,
+    int image_width, int image_height, double now_sec,
+    int line_reference_valid, int camera_actual_mode, int camera_settled) {
+  auto *controller = static_cast<vision_core::GoalController *>(handle);
+  if (controller == nullptr) return {};
+  const vision_core::GoalPoseObservation core_pose{
+      goal_pose.valid != 0, goal_pose.x_m, goal_pose.z_m,
+      goal_pose.yaw_rad, goal_pose.confidence};
+  return FromCoreGoalResult(controller->Compute(
+      ToCoreTarget(goal_target), ToCoreTarget(backboard_target), core_pose,
+      image_width, image_height, now_sec, line_reference_valid != 0,
       ToCameraFeedback(camera_actual_mode, camera_settled)));
 }
 

@@ -28,6 +28,8 @@ const char *BallController::ModeName(BallMode mode) {
   case BallMode::kVerifyPickup: return "BALL_PICKUP_VERIFY";
   case BallMode::kStandUpAfterPickup: return "BALL_STAND_UP";
   case BallMode::kReturnCameraToLine: return "CAMERA_RETURN_TO_LINE";
+  case BallMode::kBallRecoveryForward: return "BALL_RECOV_FORWARD";
+  case BallMode::kBallRecoveryDown: return "BALL_RECOV_DOWN";
   }
   return "UNKNOWN";
 }
@@ -88,7 +90,12 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     break;
   case BallMode::kLineFollow:
   case BallMode::kApproachBall:
+  case BallMode::kBallRecoveryForward:
     feedback.actual_mode = CameraMode::kForward;
+    feedback.settled = true;
+    break;
+  case BallMode::kBallRecoveryDown:
+    feedback.actual_mode = CameraMode::kDown;
     feedback.settled = true;
     break;
   }
@@ -132,8 +139,20 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     ClearTrackingState(false);
   }
 
-  UpdateTracker(ball_target, image_width, image_height);
-  if (mode_ == BallMode::kLineFollow && smoothed_.stable && smoothed_.visible) {
+  // 카메라 이동 중의 bbox는 실제 물체 운동과 카메라 시야 운동을 구분할 수
+  // 없으므로 성공/실패 이력 어디에도 넣지 않고 완전히 버린다.
+  const bool camera_observation_valid =
+      camera_feedback.actual_mode != CameraMode::kTransition &&
+      camera_feedback.settled;
+  if (camera_observation_valid) {
+    UpdateTracker(ball_target, image_width, image_height);
+  }
+  const int upper_acquire_hits = static_cast<int>(
+      std::count(upper_acquire_history_.begin(),
+                 upper_acquire_history_.end(), true));
+  if (mode_ == BallMode::kLineFollow && smoothed_.stable &&
+      smoothed_.visible &&
+      upper_acquire_hits >= std::max(1, config_.stable_min_hits)) {
     // 여기서 공 제어가 주 제어 상태가 된다. 안정화에는 여러 프레임이 필요하므로,
     // 직전에 복구 상태로 바뀌면서 나온 양수 속도로 덮어쓰지 않고 가장 최근의
     // 명시적으로 유효한 정상 추종속도를 고정한다. 이후 점선 복구 명령은 계속
@@ -144,9 +163,19 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
   }
   if (mode_ == BallMode::kApproachBall &&
       lost_count_ >= std::max(1, config_.lost_frames)) {
-    // 공 접근을 중단한 이 프레임에 유효한 점선 추종 기준값이 들어왔다면, 공을 즉시
-    // 다시 찾았을 때 사용할 수 있도록 보존한다.
-    ResetToLineFollow(false, false);
+    // 이미 정상 획득한 공을 잠깐 놓쳤다고 점선 복구로 넘기지 않는다.
+    // 마지막 화면 좌우 위치를 기억한 BALL_RECOV가 공을 다시 찾는다.
+    mode_ = camera_feedback.actual_mode == CameraMode::kDown
+                ? BallMode::kBallRecoveryDown
+                : BallMode::kBallRecoveryForward;
+    state_enter_sec_ = now_sec;
+    recovery_visible_count_ = 0;
+  }
+  if (mode_ == BallMode::kFineAdjustForPickup &&
+      lost_count_ >= std::max(1, config_.lost_frames)) {
+    mode_ = BallMode::kBallRecoveryDown;
+    state_enter_sec_ = now_sec;
+    recovery_visible_count_ = 0;
   }
 
   BallResult result;
@@ -184,6 +213,55 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     }
     last_command_ = result.command;
     return result;
+  case BallMode::kBallRecoveryForward:
+  case BallMode::kBallRecoveryDown: {
+    const bool recovery_down = mode_ == BallMode::kBallRecoveryDown;
+    result.active = true;
+    if (recovery_down) {
+      result.camera_request = CameraRequest::kDown;
+    }
+    result.command = ComputeRecoveryCommand();
+    last_command_ = result.command;
+    if (smoothed_.visible) {
+      ++recovery_visible_count_;
+      if (recovery_visible_count_ >=
+          std::max(1, config_.recovery_reacquire_min_hits)) {
+        mode_ = recovery_down ? BallMode::kFineAdjustForPickup
+                              : BallMode::kApproachBall;
+        state_enter_sec_ = now_sec;
+        result.mode = mode_;
+        result.camera_request = CameraRequest::kNone;
+        result.command = recovery_down
+                             ? ComputeFineAdjustPlaceholderCommand()
+                             : ComputeFarCommand(smoothed_);
+        if (!recovery_down) {
+          PushRecentCommand(result.command);
+        }
+        last_command_ = result.command;
+      }
+    } else {
+      recovery_visible_count_ = 0;
+    }
+    if ((mode_ == BallMode::kBallRecoveryForward ||
+         mode_ == BallMode::kBallRecoveryDown) &&
+        now_sec - state_enter_sec_ + kTimeEpsilon >=
+            std::max(0.0, config_.recovery_timeout_sec)) {
+      if (recovery_down) {
+        mode_ = BallMode::kReturnCameraToLine;
+        state_enter_sec_ = now_sec;
+        ClearTrackingState(false);
+        result = {};
+        result.active = true;
+        result.mode = mode_;
+        result.camera_request = CameraRequest::kForward;
+      } else {
+        ResetToLineFollow(false, false);
+        result = {};
+        result.mode = BallMode::kLineFollow;
+      }
+    }
+    return result;
+  }
   case BallMode::kTiltCameraDownAndApproach:
     result.active = true;
     result.camera_request = CameraRequest::kDown;
@@ -191,11 +269,15 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     last_command_ = result.command;
     if (camera_feedback.actual_mode == CameraMode::kDown &&
         camera_feedback.settled) {
-      mode_ = BallMode::kFineAdjustForPickup;
+      mode_ = smoothed_.visible ? BallMode::kFineAdjustForPickup
+                                : BallMode::kBallRecoveryDown;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
-      result.camera_request = CameraRequest::kNone;
-      result.command = ComputeFineAdjustPlaceholderCommand();
+      result.camera_request = smoothed_.visible ? CameraRequest::kNone
+                                                : CameraRequest::kDown;
+      result.command = smoothed_.visible
+                           ? ComputeFineAdjustPlaceholderCommand()
+                           : ComputeRecoveryCommand();
       last_command_ = result.command;
     } else if (now_sec - state_enter_sec_ + kTimeEpsilon >=
                std::max(0.0, config_.camera_motion_timeout_sec)) {
@@ -305,6 +387,7 @@ void BallController::UpdateTracker(
     // 조향에는 사용하지만, 화면 높이 75%라는 하향 기준 자체를 바꾸면 안 된다.
     const double raw_v_norm = Clamp(
         ball_target->center_px.v / SafeDenominator(image_height), 0.0, 1.0);
+    last_seen_u_norm_ = observed.u_norm;
     tilt_condition_met = raw_v_norm >= config_.tilt_down_v_norm;
     observed.h_norm = Clamp(ball_target->height_px / SafeDenominator(image_height), 0.0, 1.0);
     observed.area_norm = Clamp(ball_target->area_px /
@@ -337,6 +420,15 @@ void BallController::UpdateTracker(
   const int hits = static_cast<int>(
       std::count(hit_history_.begin(), hit_history_.end(), true));
   smoothed_.stable = hits >= std::max(1, config_.stable_min_hits);
+  const bool upper_acquire_condition =
+      detected &&
+      Clamp(ball_target->center_px.v / SafeDenominator(image_height),
+            0.0, 1.0) < config_.upper_acquire_v_norm;
+  upper_acquire_history_.push_back(upper_acquire_condition);
+  while (static_cast<int>(upper_acquire_history_.size()) >
+         std::max(1, config_.stable_window)) {
+    upper_acquire_history_.pop_front();
+  }
 }
 
 MotionCommand BallController::ComputeFarCommand(const TrackedBall &ball) const {
@@ -350,6 +442,20 @@ MotionCommand BallController::ComputeFarCommand(const TrackedBall &ball) const {
   command.vx = latched_far_line_vx_ *
                Clamp(config_.far_speed_scale, 0.0, 1.0);
   command.wz = LimitRate(last_command_.wz, wz_raw, config_.far_dw_max);
+  return command;
+}
+
+MotionCommand BallController::ComputeRecoveryCommand() const {
+  MotionCommand command;
+  const double horizontal_error = last_seen_u_norm_ - 0.50;
+  if (std::abs(horizontal_error) <=
+      std::max(0.0, config_.recovery_center_tolerance_norm)) {
+    command.vx = std::max(0.0, config_.recovery_forward_vx);
+  } else {
+    command.wz = horizontal_error > 0.0
+                     ? -std::abs(config_.recovery_turn_wz)
+                     : std::abs(config_.recovery_turn_wz);
+  }
   return command;
 }
 
@@ -379,11 +485,14 @@ void BallController::PushRecentCommand(const MotionCommand &command) {
 void BallController::ClearTrackingState(bool clear_line_reference) {
   lost_count_ = 0;
   hit_history_.clear();
+  upper_acquire_history_.clear();
   has_smoothed_ = false;
   smoothed_ = {};
   recent_commands_.clear();
   last_command_ = {};
   tilt_trigger_history_.clear();
+  recovery_visible_count_ = 0;
+  last_seen_u_norm_ = 0.50;
   if (clear_line_reference) last_tracking_line_vx_ = 0.0;
   latched_far_line_vx_ = 0.0;
   latched_tilt_vx_ = 0.0;

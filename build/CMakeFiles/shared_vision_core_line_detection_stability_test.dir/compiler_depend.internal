@@ -3,6 +3,7 @@
 
 CMakeFiles/shared_vision_core_line_detection_stability_test.dir/tests/line_detection_stability_test.cpp.o
  /home/noh/vision_core/tests/line_detection_stability_test.cpp
+ /home/noh/vision_core/include/vision_core/line_feature_extractor.hpp
  /home/noh/vision_core/include/vision_core/line_velocity_controller.hpp
  /home/noh/vision_core/include/vision_core/types.hpp
  /usr/include/alloca.h

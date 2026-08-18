@@ -197,6 +197,7 @@ Command LineVelocityController::ComputeImpl(const Features &features,
     w_nom = config_.low_visible_wz_decay * last_wz_;
     v_nom = config_.low_visible_vx;
   }
+  v_nom *= std::max(0.0, config_.tracking_speed_scale);
 
   const bool recovery = use_memory_recovery && recovery_active_;
   Command raw = recovery ? MemoryRecoveryCommand() : Command{v_nom, w_nom};

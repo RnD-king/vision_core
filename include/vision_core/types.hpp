@@ -18,12 +18,32 @@ struct FeatureConfig {
   int max_centers{8};
   double image_center_u{320.0};
   double lookahead_delta_v_px{220.0};
-  double lookahead_alpha_normal{0.80};
+  // 점이 충분할 때 화면 아래/위의 겹치는 지역 직선 방향 차이로 커브를
+  // 추정한다. 커브가 강할수록 lookahead 거리를 기본값의 68%까지 줄인다.
+  int curve_min_points{5};
+  double curve_min_v_span_px{80.0};
+  int curve_local_fit_points{4};
+  double curve_full_scale_angle_rad{0.35};
+  double curve_smoothing_alpha{0.20};
+  double curve_missing_decay{0.96};
+  double curve_lookahead_min_scale{0.68};
+  // 정상 추종은 가까운 점 35%, 먼 lookahead점 65%를 섞어 코너 안쪽 절단을 줄인다.
+  double lookahead_alpha_normal{0.65};
   double lookahead_alpha_recovery{0.85};
   double recover_enter_nvis{2.0};
   double recover_exit_nvis{3.0};
   double recover_enter_u{0.70};
   double recover_exit_u{0.35};
+};
+
+struct LineFeatureState {
+  double filtered_curve_score{0.0};
+  bool initialized{false};
+
+  void Reset() {
+    filtered_curve_score = 0.0;
+    initialized = false;
+  }
 };
 
 struct Features {
@@ -47,6 +67,8 @@ struct RuleConfig {
   double cmd_wz_min{-1.90};
   double cmd_wz_max{1.90};
   double v_base{0.85};
+  // 정상 라인 추종에서 계산된 vx 전체를 기존의 75%로 낮춘다.
+  double tracking_speed_scale{0.80};
   double k_u{3.00};
   double k_slope{3.40};
   double k_v_u{0.35};

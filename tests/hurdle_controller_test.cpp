@@ -46,7 +46,7 @@ void TestHurdlePlaceholderSequence() {
   cfg.contact_walk_placeholder_sec = 2.0;
   cfg.cross_placeholder_sec = 3.0;
   HurdleController controller(cfg);
-  const auto hurdle = Target(0.60, 0.90);
+  const auto hurdle = Target(0.60, 0.90, 0.20);
 
   auto result = controller.Compute(hurdle, 100, 100, 0.0, Forward());
   assert(result.mode == HurdleMode::kTiltCameraDownAndSlow);
@@ -74,10 +74,34 @@ void TestHurdlePlaceholderSequence() {
   assert(!result.active);
 }
 
+void TestHurdleUsesBallApproachNumbers() {
+  HurdleConfig cfg;
+  cfg.stable_window = 1;
+  cfg.stable_min_hits = 1;
+  cfg.tilt_trigger_window = 1;
+  cfg.tilt_trigger_min_hits = 1;
+  HurdleController controller(cfg);
+
+  const auto centered = Target(0.50, 0.60, 0.20);
+  auto result =
+      controller.Compute(centered, 100, 100, 0.0, 0.80, true, Forward());
+  assert(result.mode == HurdleMode::kApproach);
+  assert(std::abs(result.command.vx - 0.60) < 1e-9);
+  assert(std::abs(result.command.wz) < 1e-9);
+
+  controller.Reset();
+  const auto down_trigger = Target(0.50, 0.85, 0.20);
+  result = controller.Compute(
+      down_trigger, 100, 100, 0.1, 0.80, true, Forward());
+  assert(result.mode == HurdleMode::kTiltCameraDownAndSlow);
+  assert(std::abs(result.command.vx - 0.25) < 1e-9);
+}
+
 } // namespace
 
 int main() {
   TestHurdlePlaceholderSequence();
+  TestHurdleUsesBallApproachNumbers();
   std::cout << "hurdle controller tests passed\n";
   return 0;
 }

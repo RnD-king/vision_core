@@ -43,6 +43,19 @@ VisionLineFeatures vision_line_compute_features(
     const VisionLinePoint *points, int count, int image_width, int image_height,
     int previous_in_recovery, double vx_prev, double wz_prev,
     VisionLineFeatureConfig config);
+
+// 기존 VisionLineFeatures/Config ABI는 유지하고, 커브 평활화 상태만 별도
+// 포인터로 전달하는 적응형 lookahead API다.
+typedef struct VisionLineFeatureState {
+  double filtered_curve_score;
+  int initialized;
+} VisionLineFeatureState;
+
+VisionLineFeatures vision_line_compute_features_v2(
+    const VisionLinePoint *points, int count, int image_width, int image_height,
+    int previous_in_recovery, double vx_prev, double wz_prev,
+    VisionLineFeatureConfig config, VisionLineFeatureState *state);
+void vision_line_feature_state_reset(VisionLineFeatureState *state);
 VisionLineControllerHandle vision_line_controller_create(double observation_dt);
 void vision_line_controller_destroy(VisionLineControllerHandle handle);
 int vision_line_controller_set_path(VisionLineControllerHandle handle,
@@ -168,6 +181,10 @@ VisionHurdleResult vision_hurdle_controller_compute(
     VisionHurdleControllerHandle handle, VisionObjectTarget hurdle_target,
     int image_width, int image_height, double now_sec,
     int camera_actual_mode, int camera_settled);
+VisionHurdleResult vision_hurdle_controller_compute_v2(
+    VisionHurdleControllerHandle handle, VisionObjectTarget hurdle_target,
+    int image_width, int image_height, double now_sec, double line_vx,
+    int line_reference_valid, int camera_actual_mode, int camera_settled);
 void vision_hurdle_controller_reset(VisionHurdleControllerHandle handle);
 
 typedef void *VisionGoalControllerHandle;
@@ -188,12 +205,31 @@ typedef struct VisionGoalResult {
   double wz;
 } VisionGoalResult;
 
+typedef struct VisionGoalPoseObservation {
+  int valid;
+  double x_m;
+  double z_m;
+  double yaw_rad;
+  double confidence;
+} VisionGoalPoseObservation;
+
+VisionGoalPoseObservation vision_goal_pose_from_edge_depths(
+    double left_u_px, double left_depth_m, double right_u_px,
+    double right_depth_m, double fx, double fy, double cx, double cy,
+    double confidence);
+
 VisionGoalControllerHandle vision_goal_controller_create(void);
 void vision_goal_controller_destroy(VisionGoalControllerHandle handle);
 void vision_goal_controller_start_after_pickup(
     VisionGoalControllerHandle handle, double now_sec);
 VisionGoalResult vision_goal_controller_compute(
     VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
+    int image_width, int image_height, double now_sec,
+    int line_reference_valid, int camera_actual_mode, int camera_settled);
+// 기존 결과 구조체 ABI는 유지하면서 백보드 bbox와 RGB-D 자세를 추가한다.
+VisionGoalResult vision_goal_controller_compute_v2(
+    VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
+    VisionObjectTarget backboard_target, VisionGoalPoseObservation goal_pose,
     int image_width, int image_height, double now_sec,
     int line_reference_valid, int camera_actual_mode, int camera_settled);
 void vision_goal_controller_reset(VisionGoalControllerHandle handle);

@@ -13,12 +13,46 @@ namespace {
 double Clamp(double value, double low, double high) {
   return std::max(low, std::min(high, value));
 }
+
+struct LineFit {
+  bool valid{false};
+  double a{0.0};
+  double b{0.0};
+};
+
+LineFit FitLine(const std::vector<Point2> &points, std::size_t begin,
+                std::size_t end) {
+  if (end <= begin + 1 || end > points.size()) return {};
+
+  double sum_v = 0.0;
+  double sum_u = 0.0;
+  for (std::size_t index = begin; index < end; ++index) {
+    sum_v += points[index].v;
+    sum_u += points[index].u;
+  }
+  const double inv_n = 1.0 / static_cast<double>(end - begin);
+  const double mean_v = sum_v * inv_n;
+  const double mean_u = sum_u * inv_n;
+
+  double var_v = 0.0;
+  double cov_vu = 0.0;
+  for (std::size_t index = begin; index < end; ++index) {
+    const double dv = points[index].v - mean_v;
+    var_v += dv * dv;
+    cov_vu += dv * (points[index].u - mean_u);
+  }
+  if (std::abs(var_v) <= 1e-9) return {};
+
+  const double a = cov_vu / var_v;
+  return {true, a, mean_u - a * mean_v};
+}
 } // namespace
 
 Features ComputeLineFeatures(const std::vector<Point2> &input, int image_width,
                              int image_height, bool previous_in_recovery,
                              double vx_prev, double wz_prev,
-                             const FeatureConfig &cfg) {
+                             const FeatureConfig &cfg,
+                             LineFeatureState *state) {
   Features f{};
   f.vx_prev = vx_prev;
   f.wz_prev = wz_prev;
@@ -55,34 +89,84 @@ Features ComputeLineFeatures(const std::vector<Point2> &input, int image_width,
   f.u_err_lookahead = f.u_err_near;
 
   if (points.size() >= 2) {
-    double min_v = points.front().v;
-    double max_v = points.front().v;
-    double sum_v = 0.0;
-    double sum_u = 0.0;
-    for (const Point2 &point : points) {
-      min_v = std::min(min_v, point.v);
-      max_v = std::max(max_v, point.v);
-      sum_v += point.v;
-      sum_u += point.u;
-    }
-    if (max_v - min_v > 1e-6) {
-      const double inv_n = 1.0 / static_cast<double>(points.size());
-      const double mean_v = sum_v * inv_n;
-      const double mean_u = sum_u * inv_n;
-      double var_v = 0.0;
-      double cov_vu = 0.0;
-      for (const Point2 &point : points) {
-        var_v += (point.v - mean_v) * (point.v - mean_v);
-        cov_vu += (point.v - mean_v) * (point.u - mean_u);
+    const double max_v = points.front().v;
+    const double min_v = points.back().v;
+    const double v_span = max_v - min_v;
+    const LineFit global_fit = FitLine(points, 0, points.size());
+    if (global_fit.valid) {
+      f.slope = global_fit.a / 120.0;
+
+      LineFit far_fit;
+      double raw_curve_score = 0.0;
+      double evidence_confidence = 0.0;
+      const int min_curve_points = std::max(5, cfg.curve_min_points);
+      if (static_cast<int>(points.size()) >= min_curve_points &&
+          v_span >= std::max(1.0, cfg.curve_min_v_span_px)) {
+        const std::size_t local_count = std::min(
+            static_cast<std::size_t>(std::max(3, cfg.curve_local_fit_points)),
+            points.size() - 2);
+        const LineFit near_fit = FitLine(points, 0, local_count);
+        far_fit =
+            FitLine(points, points.size() - local_count, points.size());
+        if (near_fit.valid && far_fit.valid) {
+          const double direction_change =
+              std::abs(std::atan(far_fit.a) - std::atan(near_fit.a));
+          raw_curve_score = Clamp(
+              direction_change /
+                  std::max(1e-6, cfg.curve_full_scale_angle_rad),
+              0.0, 1.0);
+          const double point_confidence = Clamp(
+              (static_cast<double>(points.size()) -
+               static_cast<double>(min_curve_points) + 1.0) /
+                  2.0,
+              0.0, 1.0);
+          const double span_confidence = Clamp(
+              (v_span - cfg.curve_min_v_span_px) /
+                  std::max(1.0, cfg.curve_min_v_span_px),
+              0.0, 1.0);
+          evidence_confidence = point_confidence * span_confidence;
+        }
       }
-      if (std::abs(var_v) > 1e-9) {
-        const double a = cov_vu / var_v;
-        const double b = mean_u - a * mean_v;
-        f.slope = a / 120.0;
-        const double v_lookahead = Clamp(
-            points.front().v - cfg.lookahead_delta_v_px, min_v, max_v);
-        f.u_err_lookahead = (a * v_lookahead + b - cx) / denom;
+
+      double curve_score = raw_curve_score * evidence_confidence;
+      if (state != nullptr) {
+        if (!state->initialized) {
+          state->filtered_curve_score = 0.0;
+          state->initialized = true;
+        }
+        if (evidence_confidence > 0.0) {
+          const double alpha =
+              Clamp(cfg.curve_smoothing_alpha * evidence_confidence, 0.0, 1.0);
+          state->filtered_curve_score +=
+              alpha * (raw_curve_score - state->filtered_curve_score);
+        } else {
+          state->filtered_curve_score *=
+              Clamp(cfg.curve_missing_decay, 0.0, 1.0);
+        }
+        state->filtered_curve_score =
+            Clamp(state->filtered_curve_score, 0.0, 1.0);
+        curve_score = state->filtered_curve_score;
       }
+
+      const double min_scale =
+          Clamp(cfg.curve_lookahead_min_scale, 0.0, 1.0);
+      const double lookahead_scale =
+          1.0 - curve_score * (1.0 - min_scale);
+      const double v_lookahead = Clamp(
+          points.front().v -
+              std::max(0.0, cfg.lookahead_delta_v_px) * lookahead_scale,
+          min_v, max_v);
+      const double global_u =
+          global_fit.a * v_lookahead + global_fit.b;
+      double lookahead_u = global_u;
+      if (far_fit.valid && evidence_confidence > 0.0) {
+        const double far_u = far_fit.a * v_lookahead + far_fit.b;
+        const double local_weight =
+            Clamp(curve_score * evidence_confidence, 0.0, 1.0);
+        lookahead_u =
+            (1.0 - local_weight) * global_u + local_weight * far_u;
+      }
+      f.u_err_lookahead = (lookahead_u - cx) / denom;
     }
   }
 

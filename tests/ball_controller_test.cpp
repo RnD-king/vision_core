@@ -15,6 +15,7 @@ namespace {
 using vision_core::BallConfig;
 using vision_core::BallController;
 using vision_core::BallMode;
+using vision_core::BallResult;
 using vision_core::CameraFeedback;
 using vision_core::CameraMode;
 using vision_core::CameraRequest;
@@ -50,6 +51,7 @@ void ExpectNear(double actual, double expected) {
 
 void TestFarSpeedAndRollingWindowTrigger() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.smooth_alpha = 1.0;
@@ -61,7 +63,7 @@ void TestFarSpeedAndRollingWindowTrigger() {
   BallController controller(cfg);
 
   auto high = Target(0.90, 0.80);
-  auto low = Target(0.50, 0.70, 0.95);  // huge bbox must not trigger tilt
+  auto low = Target(0.50, 0.60, 0.95);  // huge bbox must not trigger tilt
 
   auto result = controller.Compute(
       high, 100, 100, 0.00, 0.8, true, Forward());
@@ -91,6 +93,7 @@ void TestFarSpeedAndRollingWindowTrigger() {
 
 void TestPositiveRecoveryCannotOverwriteTrackingReference() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 3;
   cfg.stable_min_hits = 3;
   cfg.smooth_alpha = 1.0;
@@ -113,6 +116,7 @@ void TestPositiveRecoveryCannotOverwriteTrackingReference() {
 
 void TestRecoveryAloneIsNotAForwardReference() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_down_min_hits = 99;
@@ -130,24 +134,44 @@ void TestDefaultStableFramesCountTowardTiltAndRawScreenWins() {
   BallConfig cfg;
   cfg.smooth_alpha = 1.0;
   BallController controller(cfg);
-  auto target = Target(0.50, 0.80);
+  auto upper = Target(0.50, 0.50);
+  auto lower = Target(0.50, 0.80);
 
-  for (int frame = 0; frame < 6; ++frame) {
+  // 화면 아래쪽에서만 생긴 검출은 기본 7/10 안정화 조건을 만족해도
+  // 공 미션을 시작하지 않는다.
+  for (int frame = 0; frame < 10; ++frame) {
     const auto result = controller.Compute(
-        target, 100, 100, 0.02 * frame, 0.8, Forward());
-    assert(result.mode != BallMode::kTiltCameraDownAndApproach);
+        lower, 100, 100, 0.02 * frame, 0.8, Forward());
+    assert(result.mode == BallMode::kLineFollow);
   }
-  auto result = controller.Compute(target, 100, 100, 0.12, 0.8, Forward());
+
+  // 먼저 화면 위쪽에서 7/10 안정 획득한 뒤, 아래 65% 영역에서
+  // 6/10 프레임을 만족해야 카메라를 내린다.
+  BallController armed_controller(cfg);
+  BallResult result;
+  for (int frame = 0; frame < 7; ++frame) {
+    result = armed_controller.Compute(
+        upper, 100, 100, 0.20 + 0.02 * frame, 0.8, Forward());
+  }
+  assert(result.mode == BallMode::kApproachBall);
+  for (int frame = 0; frame < 5; ++frame) {
+    result = armed_controller.Compute(
+        lower, 100, 100, 0.40 + 0.02 * frame, 0.8, Forward());
+    assert(result.mode == BallMode::kApproachBall);
+  }
+  result = armed_controller.Compute(
+      lower, 100, 100, 0.50, 0.8, Forward());
   assert(result.mode == BallMode::kTiltCameraDownAndApproach);
 
   BallConfig raw_cfg;
+  raw_cfg.upper_acquire_v_norm = 1.01;
   raw_cfg.stable_window = 1;
   raw_cfg.stable_min_hits = 1;
   raw_cfg.tilt_down_window = 1;
   raw_cfg.tilt_down_min_hits = 1;
   raw_cfg.smooth_alpha = 1.0;
   BallController raw_controller(raw_cfg);
-  auto rectified_only = Target(0.50, 0.70);
+  auto rectified_only = Target(0.50, 0.60);
   rectified_only.center_rectified = true;
   rectified_only.rectified_center_px.v = 90.0;
   result = raw_controller.Compute(
@@ -164,6 +188,7 @@ void TestDefaultStableFramesCountTowardTiltAndRawScreenWins() {
 
 void TestBallPickupPlaceholderSequenceAndCooldown() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_down_window = 1;
@@ -238,6 +263,7 @@ void TestBallPickupPlaceholderSequenceAndCooldown() {
 
 void TestCameraTimeoutAndLegacyTimedFeedback() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_down_window = 1;
@@ -258,6 +284,7 @@ void TestCameraTimeoutAndLegacyTimedFeedback() {
   assert(result.mode == BallMode::kFineAdjustForPickup);
 
   BallConfig legacy_cfg;
+  legacy_cfg.upper_acquire_v_norm = 1.01;
   legacy_cfg.stable_window = 1;
   legacy_cfg.stable_min_hits = 1;
   legacy_cfg.tilt_down_window = 1;
@@ -275,6 +302,7 @@ void TestCameraTimeoutAndLegacyTimedFeedback() {
 
 void TestLostFrameLimitIsExact() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_down_min_hits = 99;
@@ -288,16 +316,97 @@ void TestLostFrameLimitIsExact() {
   assert(result.mode == BallMode::kApproachBall);
   result = controller.Compute(
       std::nullopt, 100, 100, 0.2, 0.6, true, Forward());
-  assert(result.mode == BallMode::kLineFollow);
-  assert(!result.active);
+  assert(result.mode == BallMode::kBallRecoveryForward);
+  assert(result.active);
+  ExpectNear(result.command.vx, 0.10);
+  ExpectNear(result.command.wz, 0.0);
   result = controller.Compute(
       target, 100, 100, 0.3, 0.12, false, Forward());
+  assert(result.mode == BallMode::kBallRecoveryForward);
+  result = controller.Compute(
+      target, 100, 100, 0.4, 0.12, false, Forward());
+  assert(result.mode == BallMode::kBallRecoveryForward);
+  result = controller.Compute(
+      target, 100, 100, 0.5, 0.12, false, Forward());
   assert(result.mode == BallMode::kApproachBall);
-  ExpectNear(result.command.vx, 0.54);
+  // 최초 정상 line vx 0.80에 기본 접근비율 0.75를 적용한다.
+  ExpectNear(result.command.vx, 0.60);
+
+  // 우측에서 놓친 공은 BALL_RECOV 동안 우측으로 제자리 회전한다.
+  BallController turn_controller(cfg);
+  result = turn_controller.Compute(
+      Target(0.80, 0.50), 100, 100, 0.0, 0.8, true, Forward());
+  assert(result.mode == BallMode::kApproachBall);
+  turn_controller.Compute(
+      std::nullopt, 100, 100, 0.1, 0.8, true, Forward());
+  result = turn_controller.Compute(
+      std::nullopt, 100, 100, 0.2, 0.8, true, Forward());
+  assert(result.mode == BallMode::kBallRecoveryForward);
+  ExpectNear(result.command.vx, 0.0);
+  ExpectNear(result.command.wz, -0.25);
+
+  result = turn_controller.Compute(
+      std::nullopt, 100, 100, 2.2, 0.8, true, Forward());
+  assert(result.mode == BallMode::kLineFollow);
+  assert(!result.active);
+}
+
+void TestMovingCameraDropsDetectionsAndDownRecoveryStaysDown() {
+  BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
+  cfg.stable_window = 1;
+  cfg.stable_min_hits = 1;
+  cfg.tilt_down_window = 1;
+  cfg.tilt_down_min_hits = 1;
+  cfg.lost_frames = 2;
+  cfg.recovery_reacquire_min_hits = 2;
+  BallController controller(cfg);
+  auto target = Target(0.50, 0.80);
+
+  // 이동 중 처음 나타난 검출은 공 획득 이력에 들어가지 않는다.
+  auto result = controller.Compute(
+      target, 100, 100, 0.0, 0.8, true, Moving());
+  assert(result.mode == BallMode::kLineFollow);
+  result = controller.Compute(
+      std::nullopt, 100, 100, 0.1, 0.8, true, Forward());
+  assert(result.mode == BallMode::kLineFollow);
+
+  // 정면에서 정상 획득해 카메라를 내리는 동안의 검출/소실도 버린다.
+  result = controller.Compute(
+      target, 100, 100, 0.2, 0.8, true, Forward());
+  assert(result.mode == BallMode::kTiltCameraDownAndApproach);
+  result = controller.Compute(
+      std::nullopt, 100, 100, 0.3, 0.8, true, Moving());
+  assert(result.mode == BallMode::kTiltCameraDownAndApproach);
+
+  // 아래에 도착했는데 공이 없으면 카메라를 유지한 BALL_RECOV_DOWN.
+  result = controller.Compute(
+      std::nullopt, 100, 100, 0.4, 0.8, true, Down());
+  assert(result.mode == BallMode::kBallRecoveryDown);
+  assert(result.camera_request == CameraRequest::kDown);
+  result = controller.Compute(
+      target, 100, 100, 0.5, 0.8, true, Down());
+  assert(result.mode == BallMode::kBallRecoveryDown);
+  result = controller.Compute(
+      target, 100, 100, 0.6, 0.8, true, Down());
+  assert(result.mode == BallMode::kFineAdjustForPickup);
+
+  // 하향 복구가 실패하면 라인 제어로 바로 넘기지 않고 카메라부터 올린다.
+  BallController timeout_controller(cfg);
+  timeout_controller.Compute(
+      target, 100, 100, 0.0, 0.8, true, Forward());
+  result = timeout_controller.Compute(
+      std::nullopt, 100, 100, 0.1, 0.8, true, Down());
+  assert(result.mode == BallMode::kBallRecoveryDown);
+  result = timeout_controller.Compute(
+      std::nullopt, 100, 100, 2.1, 0.8, true, Down());
+  assert(result.mode == BallMode::kReturnCameraToLine);
+  assert(result.camera_request == CameraRequest::kForward);
 }
 
 void TestResetClearsCooldownAndState() {
   BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_down_window = 1;
@@ -317,7 +426,7 @@ void TestResetClearsCooldownAndState() {
   const auto result = controller.Compute(
       target, 100, 100, 0.4, 0.4, true, Forward());
   assert(result.mode == BallMode::kTiltCameraDownAndApproach);
-  ExpectNear(result.command.vx, 0.18);
+  ExpectNear(result.command.vx, 0.15);
 }
 
 void TestSelectorKeepsLineCandidateWhileBallActive() {
@@ -389,11 +498,20 @@ void TestCApiV2V3LayoutAndPrecomputedSelector() {
   target.height = 10.0;
   target.center_u = 50.0;
   target.center_v = 80.0;
+  VisionObjectTarget upper_target = target;
+  upper_target.y = 45.0;
+  upper_target.center_v = 50.0;
 
   VisionBallResult result{};
   for (int frame = 0; frame < 7; ++frame) {
     result = vision_ball_controller_compute_v2(
-        handle, target, 100, 100, 0.02 * frame, frame == 0 ? 0.8 : 0.0,
+        handle, upper_target, 100, 100, 0.02 * frame,
+        frame == 0 ? 0.8 : 0.0,
+        static_cast<int>(CameraMode::kForward), 1);
+  }
+  for (int frame = 0; frame < 6; ++frame) {
+    result = vision_ball_controller_compute_v2(
+        handle, target, 100, 100, 0.20 + 0.02 * frame, 0.0,
         static_cast<int>(CameraMode::kForward), 1);
   }
   assert(result.active == 1);
@@ -405,9 +523,14 @@ void TestCApiV2V3LayoutAndPrecomputedSelector() {
   vision_ball_controller_reset(handle);
   for (int frame = 0; frame < 7; ++frame) {
     result = vision_ball_controller_compute_v3(
-        handle, target, 100, 100, 0.02 * frame,
+        handle, upper_target, 100, 100, 0.02 * frame,
         frame == 0 ? 0.8 : 0.12, frame == 0 ? 1 : 0,
         static_cast<int>(CameraMode::kForward), 1);
+  }
+  for (int frame = 0; frame < 6; ++frame) {
+    result = vision_ball_controller_compute_v3(
+        handle, target, 100, 100, 0.20 + 0.02 * frame,
+        0.12, 0, static_cast<int>(CameraMode::kForward), 1);
   }
   assert(result.active == 1);
   assert(result.mode ==
@@ -443,6 +566,7 @@ int main() {
   TestBallPickupPlaceholderSequenceAndCooldown();
   TestCameraTimeoutAndLegacyTimedFeedback();
   TestLostFrameLimitIsExact();
+  TestMovingCameraDropsDetectionsAndDownRecoveryStaysDown();
   TestResetClearsCooldownAndState();
   TestSelectorKeepsLineCandidateWhileBallActive();
   TestMissionSelectorPriority();

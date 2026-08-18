@@ -16,6 +16,8 @@ enum class BallMode {
   kVerifyPickup = 5,
   kStandUpAfterPickup = 6,
   kReturnCameraToLine = 7,
+  kBallRecoveryForward = 8,
+  kBallRecoveryDown = 9,
 };
 
 enum class CameraMode {
@@ -26,7 +28,8 @@ enum class CameraMode {
 };
 
 // 외부 카메라 구동기에 이번 프레임에 전달할 요청이다.
-// kNone은 발행하지 않고, kDown/kForward는 해당 자세의 도달 피드백이 올 때까지 반복한다.
+// kNone은 발행하지 않고, kDown/kForward는 해당 자세의 도달 피드백이 올 때까지
+// 반복한다.
 enum class CameraRequest {
   kNone = 0,
   kDown,
@@ -54,10 +57,13 @@ struct BallConfig {
   double far_slow_by_turn{0.60};
   double far_dv_max{0.12};
   double far_dw_max{0.35};
-  double far_speed_scale{0.90};
-  double tilt_down_v_norm{0.75};
+  double far_speed_scale{0.75};
+  // 아래쪽 노이즈만으로 공 미션이 시작되지 않도록, 먼저 이 경계보다
+  // 위에서 stable_window/stable_min_hits만큼 안정적으로 보여야 한다.
+  double upper_acquire_v_norm{0.65};
+  double tilt_down_v_norm{0.65};
   int tilt_down_window{10};
-  int tilt_down_min_hits{7};
+  int tilt_down_min_hits{6};
   // Retained for source compatibility. The transition now depends only on the
   // rolling center-v hit history, not bbox height.
   double tilt_down_h_norm{0.18};
@@ -74,8 +80,9 @@ struct BallConfig {
   double tilt_walk_vx_max{0.25};
   // 실제 미세걸음/집기/확인/일어나기 모션이 연결되기 전의 임시 동작이다.
   // 미세조정은 저속 직진으로, 나머지는 정지 명령과 시간 경과로 대신한다.
-  double fine_adjust_placeholder_vx{0.15};
-  double fine_adjust_placeholder_duration_sec{1.0};
+  double fine_adjust_placeholder_vx{0.1};
+  // 카메라 하향 완료 뒤 임시 정밀 전진을 기존 1.0초에서 0.5초 늘렸다.
+  double fine_adjust_placeholder_duration_sec{1.5};
   double pickup_placeholder_duration_sec{3.0};
   double pickup_verification_placeholder_sec{0.0};
   double stand_up_placeholder_sec{0.0};
@@ -91,6 +98,11 @@ struct BallConfig {
   double near_x_tol{0.06};
   double near_y_tol{0.06};
   bool near_use_lateral{true};
+  double recovery_timeout_sec{2.0};
+  int recovery_reacquire_min_hits{3};
+  double recovery_center_tolerance_norm{0.12};
+  double recovery_forward_vx{0.10};
+  double recovery_turn_wz{0.25};
 };
 
 struct TrackedBall {
@@ -145,6 +157,7 @@ private:
   void UpdateTracker(const std::optional<ObjectTarget> &ball_target,
                      int image_width, int image_height);
   MotionCommand ComputeFarCommand(const TrackedBall &ball) const;
+  MotionCommand ComputeRecoveryCommand() const;
   MotionCommand ComputeTiltCommand(double now_sec) const;
   MotionCommand ComputeFineAdjustPlaceholderCommand() const;
   void PushRecentCommand(const MotionCommand &command);
@@ -153,6 +166,7 @@ private:
   BallConfig config_;
   BallMode mode_{BallMode::kLineFollow};
   std::deque<bool> hit_history_;
+  std::deque<bool> upper_acquire_history_;
   int lost_count_{0};
   bool has_smoothed_{false};
   TrackedBall smoothed_;
@@ -160,6 +174,8 @@ private:
   MotionCommand last_command_;
   double state_enter_sec_{0.0};
   std::deque<bool> tilt_trigger_history_;
+  int recovery_visible_count_{0};
+  double last_seen_u_norm_{0.50};
   // Most recent positive vx explicitly marked as normal line tracking.  It is
   // also refreshed during the ball-ignore cooldown for the next mission.
   double last_tracking_line_vx_{0.0};
