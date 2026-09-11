@@ -600,6 +600,45 @@ shared_vision_core_line_detection_stability_test/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build.make CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build
 .PHONY : shared_vision_core_line_detection_stability_test/fast
 
+#=============================================================================
+# Target rules for targets named shared_vision_core_control_command_test
+
+# Build rule for target.
+shared_vision_core_control_command_test: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 shared_vision_core_control_command_test
+.PHONY : shared_vision_core_control_command_test
+
+# fast build rule for target.
+shared_vision_core_control_command_test/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/build
+.PHONY : shared_vision_core_control_command_test/fast
+
+#=============================================================================
+# Target rules for targets named shared_vision_core_p2p_motion_quantizer_test
+
+# Build rule for target.
+shared_vision_core_p2p_motion_quantizer_test: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 shared_vision_core_p2p_motion_quantizer_test
+.PHONY : shared_vision_core_p2p_motion_quantizer_test
+
+# fast build rule for target.
+shared_vision_core_p2p_motion_quantizer_test/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build
+.PHONY : shared_vision_core_p2p_motion_quantizer_test/fast
+
+#=============================================================================
+# Target rules for targets named shared_vision_core_mission_controller_test
+
+# Build rule for target.
+shared_vision_core_mission_controller_test: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 shared_vision_core_mission_controller_test
+.PHONY : shared_vision_core_mission_controller_test
+
+# fast build rule for target.
+shared_vision_core_mission_controller_test/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/build
+.PHONY : shared_vision_core_mission_controller_test/fast
+
 src/ball_controller.o: src/ball_controller.cpp.o
 .PHONY : src/ball_controller.o
 
@@ -647,6 +686,30 @@ src/c_api.s: src/c_api.cpp.s
 src/c_api.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/c_api.cpp.s
 .PHONY : src/c_api.cpp.s
+
+src/control_command.o: src/control_command.cpp.o
+.PHONY : src/control_command.o
+
+# target to build an object file
+src/control_command.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o
+.PHONY : src/control_command.cpp.o
+
+src/control_command.i: src/control_command.cpp.i
+.PHONY : src/control_command.i
+
+# target to preprocess a source file
+src/control_command.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/control_command.cpp.i
+.PHONY : src/control_command.cpp.i
+
+src/control_command.s: src/control_command.cpp.s
+.PHONY : src/control_command.s
+
+# target to generate assembly for a file
+src/control_command.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/control_command.cpp.s
+.PHONY : src/control_command.cpp.s
 
 src/coordinate_rectifier.o: src/coordinate_rectifier.cpp.o
 .PHONY : src/coordinate_rectifier.o
@@ -768,6 +831,30 @@ src/line_velocity_controller.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/line_velocity_controller.cpp.s
 .PHONY : src/line_velocity_controller.cpp.s
 
+src/mission_controller.o: src/mission_controller.cpp.o
+.PHONY : src/mission_controller.o
+
+# target to build an object file
+src/mission_controller.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o
+.PHONY : src/mission_controller.cpp.o
+
+src/mission_controller.i: src/mission_controller.cpp.i
+.PHONY : src/mission_controller.i
+
+# target to preprocess a source file
+src/mission_controller.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.i
+.PHONY : src/mission_controller.cpp.i
+
+src/mission_controller.s: src/mission_controller.cpp.s
+.PHONY : src/mission_controller.s
+
+# target to generate assembly for a file
+src/mission_controller.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.s
+.PHONY : src/mission_controller.cpp.s
+
 src/motion_command_selector.o: src/motion_command_selector.cpp.o
 .PHONY : src/motion_command_selector.o
 
@@ -816,6 +903,30 @@ src/object_target_extractor.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/object_target_extractor.cpp.s
 .PHONY : src/object_target_extractor.cpp.s
 
+src/p2p_motion_quantizer.o: src/p2p_motion_quantizer.cpp.o
+.PHONY : src/p2p_motion_quantizer.o
+
+# target to build an object file
+src/p2p_motion_quantizer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o
+.PHONY : src/p2p_motion_quantizer.cpp.o
+
+src/p2p_motion_quantizer.i: src/p2p_motion_quantizer.cpp.i
+.PHONY : src/p2p_motion_quantizer.i
+
+# target to preprocess a source file
+src/p2p_motion_quantizer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.i
+.PHONY : src/p2p_motion_quantizer.cpp.i
+
+src/p2p_motion_quantizer.s: src/p2p_motion_quantizer.cpp.s
+.PHONY : src/p2p_motion_quantizer.s
+
+# target to generate assembly for a file
+src/p2p_motion_quantizer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.s
+.PHONY : src/p2p_motion_quantizer.cpp.s
+
 tests/ball_controller_test.o: tests/ball_controller_test.cpp.o
 .PHONY : tests/ball_controller_test.o
 
@@ -839,6 +950,30 @@ tests/ball_controller_test.s: tests/ball_controller_test.cpp.s
 tests/ball_controller_test.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_ball_controller_test.dir/build.make CMakeFiles/shared_vision_core_ball_controller_test.dir/tests/ball_controller_test.cpp.s
 .PHONY : tests/ball_controller_test.cpp.s
+
+tests/control_command_test.o: tests/control_command_test.cpp.o
+.PHONY : tests/control_command_test.o
+
+# target to build an object file
+tests/control_command_test.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/tests/control_command_test.cpp.o
+.PHONY : tests/control_command_test.cpp.o
+
+tests/control_command_test.i: tests/control_command_test.cpp.i
+.PHONY : tests/control_command_test.i
+
+# target to preprocess a source file
+tests/control_command_test.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/tests/control_command_test.cpp.i
+.PHONY : tests/control_command_test.cpp.i
+
+tests/control_command_test.s: tests/control_command_test.cpp.s
+.PHONY : tests/control_command_test.s
+
+# target to generate assembly for a file
+tests/control_command_test.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/tests/control_command_test.cpp.s
+.PHONY : tests/control_command_test.cpp.s
 
 tests/goal_controller_test.o: tests/goal_controller_test.cpp.o
 .PHONY : tests/goal_controller_test.o
@@ -912,6 +1047,54 @@ tests/line_detection_stability_test.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build.make CMakeFiles/shared_vision_core_line_detection_stability_test.dir/tests/line_detection_stability_test.cpp.s
 .PHONY : tests/line_detection_stability_test.cpp.s
 
+tests/mission_controller_test.o: tests/mission_controller_test.cpp.o
+.PHONY : tests/mission_controller_test.o
+
+# target to build an object file
+tests/mission_controller_test.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/tests/mission_controller_test.cpp.o
+.PHONY : tests/mission_controller_test.cpp.o
+
+tests/mission_controller_test.i: tests/mission_controller_test.cpp.i
+.PHONY : tests/mission_controller_test.i
+
+# target to preprocess a source file
+tests/mission_controller_test.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/tests/mission_controller_test.cpp.i
+.PHONY : tests/mission_controller_test.cpp.i
+
+tests/mission_controller_test.s: tests/mission_controller_test.cpp.s
+.PHONY : tests/mission_controller_test.s
+
+# target to generate assembly for a file
+tests/mission_controller_test.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/tests/mission_controller_test.cpp.s
+.PHONY : tests/mission_controller_test.cpp.s
+
+tests/p2p_motion_quantizer_test.o: tests/p2p_motion_quantizer_test.cpp.o
+.PHONY : tests/p2p_motion_quantizer_test.o
+
+# target to build an object file
+tests/p2p_motion_quantizer_test.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/tests/p2p_motion_quantizer_test.cpp.o
+.PHONY : tests/p2p_motion_quantizer_test.cpp.o
+
+tests/p2p_motion_quantizer_test.i: tests/p2p_motion_quantizer_test.cpp.i
+.PHONY : tests/p2p_motion_quantizer_test.i
+
+# target to preprocess a source file
+tests/p2p_motion_quantizer_test.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/tests/p2p_motion_quantizer_test.cpp.i
+.PHONY : tests/p2p_motion_quantizer_test.cpp.i
+
+tests/p2p_motion_quantizer_test.s: tests/p2p_motion_quantizer_test.cpp.s
+.PHONY : tests/p2p_motion_quantizer_test.s
+
+# target to generate assembly for a file
+tests/p2p_motion_quantizer_test.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/tests/p2p_motion_quantizer_test.cpp.s
+.PHONY : tests/p2p_motion_quantizer_test.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -955,15 +1138,21 @@ help:
 	@echo "... NightlyUpdate"
 	@echo "... shared_vision_core"
 	@echo "... shared_vision_core_ball_controller_test"
+	@echo "... shared_vision_core_control_command_test"
 	@echo "... shared_vision_core_goal_controller_test"
 	@echo "... shared_vision_core_hurdle_controller_test"
 	@echo "... shared_vision_core_line_detection_stability_test"
+	@echo "... shared_vision_core_mission_controller_test"
+	@echo "... shared_vision_core_p2p_motion_quantizer_test"
 	@echo "... src/ball_controller.o"
 	@echo "... src/ball_controller.i"
 	@echo "... src/ball_controller.s"
 	@echo "... src/c_api.o"
 	@echo "... src/c_api.i"
 	@echo "... src/c_api.s"
+	@echo "... src/control_command.o"
+	@echo "... src/control_command.i"
+	@echo "... src/control_command.s"
 	@echo "... src/coordinate_rectifier.o"
 	@echo "... src/coordinate_rectifier.i"
 	@echo "... src/coordinate_rectifier.s"
@@ -979,15 +1168,24 @@ help:
 	@echo "... src/line_velocity_controller.o"
 	@echo "... src/line_velocity_controller.i"
 	@echo "... src/line_velocity_controller.s"
+	@echo "... src/mission_controller.o"
+	@echo "... src/mission_controller.i"
+	@echo "... src/mission_controller.s"
 	@echo "... src/motion_command_selector.o"
 	@echo "... src/motion_command_selector.i"
 	@echo "... src/motion_command_selector.s"
 	@echo "... src/object_target_extractor.o"
 	@echo "... src/object_target_extractor.i"
 	@echo "... src/object_target_extractor.s"
+	@echo "... src/p2p_motion_quantizer.o"
+	@echo "... src/p2p_motion_quantizer.i"
+	@echo "... src/p2p_motion_quantizer.s"
 	@echo "... tests/ball_controller_test.o"
 	@echo "... tests/ball_controller_test.i"
 	@echo "... tests/ball_controller_test.s"
+	@echo "... tests/control_command_test.o"
+	@echo "... tests/control_command_test.i"
+	@echo "... tests/control_command_test.s"
 	@echo "... tests/goal_controller_test.o"
 	@echo "... tests/goal_controller_test.i"
 	@echo "... tests/goal_controller_test.s"
@@ -997,6 +1195,12 @@ help:
 	@echo "... tests/line_detection_stability_test.o"
 	@echo "... tests/line_detection_stability_test.i"
 	@echo "... tests/line_detection_stability_test.s"
+	@echo "... tests/mission_controller_test.o"
+	@echo "... tests/mission_controller_test.i"
+	@echo "... tests/mission_controller_test.s"
+	@echo "... tests/p2p_motion_quantizer_test.o"
+	@echo "... tests/p2p_motion_quantizer_test.i"
+	@echo "... tests/p2p_motion_quantizer_test.s"
 .PHONY : help
 
 

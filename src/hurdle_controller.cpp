@@ -25,6 +25,10 @@ const char *HurdleController::ModeName(HurdleMode mode) {
   case HurdleMode::kCross: return "HURDLE_CROSS";
   case HurdleMode::kReturnCameraToLine:
     return "HURDLE_CAMERA_RETURN_TO_LINE";
+  case HurdleMode::kRlStopping: return "HURDLE_RL_STOPPING";
+  case HurdleMode::kRecoveryForward: return "HURDLE_RECOV_FORWARD";
+  case HurdleMode::kRecoveryDown: return "HURDLE_RECOV_DOWN";
+  case HurdleMode::kFailed: return "HURDLE_FAILED";
   }
   return "UNKNOWN";
 }
@@ -49,6 +53,16 @@ HurdleResult HurdleController::Compute(
     const std::optional<ObjectTarget> &hurdle_target, int image_width,
     int image_height, double now_sec, double line_vx,
     bool line_reference_valid, const CameraFeedback &camera_feedback) {
+  return Compute(hurdle_target, image_width, image_height, now_sec, line_vx,
+                 line_reference_valid, camera_feedback,
+                 ActionExecutionFeedback{});
+}
+
+HurdleResult HurdleController::Compute(
+    const std::optional<ObjectTarget> &hurdle_target, int image_width,
+    int image_height, double now_sec, double line_vx,
+    bool line_reference_valid, const CameraFeedback &camera_feedback,
+    const ActionExecutionFeedback &action_feedback) {
   if (line_reference_valid && std::isfinite(line_vx) && line_vx > 0.0) {
     last_tracking_line_vx_ = line_vx;
   }
@@ -61,13 +75,22 @@ HurdleResult HurdleController::Compute(
   if (mode_ == HurdleMode::kLineFollow && ignore_until_sec_ > 0.0) {
     ignore_until_sec_ = 0.0;
     hit_history_.clear();
+    acquire_history_.clear();
     tilt_history_.clear();
     has_smoothed_ = false;
     tracked_ = {};
   }
 
-  UpdateTracker(hurdle_target, image_width, image_height);
-  if (mode_ == HurdleMode::kLineFollow && tracked_.stable && tracked_.visible) {
+  const bool camera_observation_valid =
+      camera_feedback.actual_mode != CameraMode::kTransition &&
+      camera_feedback.settled;
+  if (camera_observation_valid) {
+    UpdateTracker(hurdle_target, image_width, image_height);
+  }
+  const int acquire_hits = static_cast<int>(std::count(
+      acquire_history_.begin(), acquire_history_.end(), true));
+  if (mode_ == HurdleMode::kLineFollow && tracked_.stable && tracked_.visible &&
+      acquire_hits >= std::max(1, config_.stable_min_hits)) {
     const double reference_vx =
         last_tracking_line_vx_ > 0.0 ? last_tracking_line_vx_
                                      : config_.approach_vx;
@@ -78,7 +101,11 @@ HurdleResult HurdleController::Compute(
   }
   if (mode_ == HurdleMode::kApproach &&
       lost_count_ >= std::max(1, config_.lost_frames)) {
-    ResetToLine(false);
+    mode_ = camera_feedback.actual_mode == CameraMode::kDown
+                ? HurdleMode::kRecoveryDown
+                : HurdleMode::kRecoveryForward;
+    state_enter_sec_ = now_sec;
+    recovery_visible_count_ = 0;
   }
 
   HurdleResult result;
@@ -109,31 +136,104 @@ HurdleResult HurdleController::Compute(
     }
     return result;
   }
+  case HurdleMode::kRecoveryForward:
+  case HurdleMode::kRecoveryDown: {
+    const bool recovery_down = mode_ == HurdleMode::kRecoveryDown;
+    result.active = true;
+    if (recovery_down) result.camera_request = CameraRequest::kDown;
+    result.command = ComputeRecoveryCommand();
+    last_command_ = result.command;
+    if (tracked_.visible) {
+      ++recovery_visible_count_;
+      if (recovery_visible_count_ >=
+          std::max(1, config_.recovery_reacquire_min_hits)) {
+        mode_ = recovery_down
+                    ? (action_feedback.enabled ? HurdleMode::kRlStopping
+                                               : HurdleMode::kContactWalk)
+                    : HurdleMode::kApproach;
+        state_enter_sec_ = now_sec;
+        result.mode = mode_;
+        result.camera_request = CameraRequest::kNone;
+        result.command = recovery_down ? MotionCommand{}
+                                       : ComputeApproachCommand();
+        if (recovery_down && !action_feedback.enabled) {
+          result.action_request = HurdleActionRequest::kContactWalk;
+          result.command = {std::max(0.0, config_.contact_walk_placeholder_vx),
+                            0.0, 0.0};
+        }
+        last_command_ = result.command;
+      }
+    } else {
+      recovery_visible_count_ = 0;
+    }
+    if (mode_ == HurdleMode::kRecoveryForward ||
+        mode_ == HurdleMode::kRecoveryDown) {
+      if (now_sec - state_enter_sec_ + kTimeEpsilon >=
+          std::max(0.0, config_.recovery_timeout_sec)) {
+        mode_ = HurdleMode::kFailed;
+        result.mode = mode_;
+        result.camera_request = CameraRequest::kNone;
+        result.command = {};
+        last_command_ = {};
+      }
+    }
+    return result;
+  }
+  case HurdleMode::kFailed:
+    // 실패 상태도 active를 유지해 selector가 Line/Ball 명령으로 넘어가지 않게
+    // 한다. 명시적인 Reset() 전까지 정지 상태로 잠긴다.
+    result.active = true;
+    result.command = {};
+    last_command_ = {};
+    return result;
   case HurdleMode::kTiltCameraDownAndSlow:
     result.active = true;
     result.camera_request = CameraRequest::kDown;
     result.command = {latched_tilt_vx_, 0.0, 0.0};
     if (camera_feedback.actual_mode == CameraMode::kDown &&
         camera_feedback.settled) {
-      mode_ = HurdleMode::kContactWalk;
+      mode_ = tracked_.visible
+                  ? (action_feedback.enabled ? HurdleMode::kRlStopping
+                                             : HurdleMode::kContactWalk)
+                  : HurdleMode::kRecoveryDown;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
-      result.camera_request = CameraRequest::kNone;
-      result.action_request = HurdleActionRequest::kContactWalk;
-      result.command = {
-          std::max(0.0, config_.contact_walk_placeholder_vx), 0.0, 0.0};
+      result.camera_request = tracked_.visible ? CameraRequest::kNone
+                                               : CameraRequest::kDown;
+      if (!tracked_.visible) {
+        recovery_visible_count_ = 0;
+        result.command = ComputeRecoveryCommand();
+      } else if (action_feedback.enabled) {
+        result.command = {};
+      } else {
+        result.action_request = HurdleActionRequest::kContactWalk;
+        result.command = {std::max(0.0, config_.contact_walk_placeholder_vx),
+                          0.0, 0.0};
+      }
     } else if (now_sec - state_enter_sec_ + kTimeEpsilon >=
                std::max(0.0, config_.camera_motion_timeout_sec)) {
       result.command = {};
     }
     return result;
+  case HurdleMode::kRlStopping:
+    result.active = true;
+    result.command = {};
+    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
+        std::max(0.0, config_.rl_stop_duration_sec)) {
+      mode_ = HurdleMode::kContactWalk;
+      state_enter_sec_ = now_sec;
+      result.mode = mode_;
+      result.action_request = HurdleActionRequest::kContactWalk;
+    }
+    return result;
   case HurdleMode::kContactWalk:
     result.active = true;
     result.action_request = HurdleActionRequest::kContactWalk;
-    result.command = {
-        std::max(0.0, config_.contact_walk_placeholder_vx), 0.0, 0.0};
-    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.contact_walk_placeholder_sec)) {
+    result.command = {};
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0, config_.contact_walk_placeholder_sec))) {
       mode_ = HurdleMode::kCross;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
@@ -145,8 +245,10 @@ HurdleResult HurdleController::Compute(
     result.active = true;
     result.action_request = HurdleActionRequest::kCross;
     result.command = {};
-    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.cross_placeholder_sec)) {
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0, config_.cross_placeholder_sec))) {
       mode_ = HurdleMode::kReturnCameraToLine;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
@@ -182,6 +284,7 @@ void HurdleController::UpdateTracker(
   }
 
   bool close = false;
+  bool acquire = false;
   if (detected) {
     lost_count_ = 0;
     TrackedHurdle observed;
@@ -201,6 +304,8 @@ void HurdleController::UpdateTracker(
     const double raw_v_norm = Clamp(
         target->center_px.v / SafeDenominator(image_height), 0.0, 1.0);
     close = raw_v_norm >= config_.tilt_trigger_v_norm;
+    acquire = raw_v_norm >= config_.acquire_min_v_norm;
+    last_seen_u_norm_ = observed.u_norm;
     const double alpha = Clamp(config_.smooth_alpha, 0.0, 1.0);
     if (!has_smoothed_) {
       tracked_ = observed;
@@ -227,6 +332,11 @@ void HurdleController::UpdateTracker(
   const int hits = static_cast<int>(
       std::count(hit_history_.begin(), hit_history_.end(), true));
   tracked_.stable = hits >= std::max(1, config_.stable_min_hits);
+  acquire_history_.push_back(detected && acquire);
+  while (static_cast<int>(acquire_history_.size()) >
+         std::max(1, config_.stable_window)) {
+    acquire_history_.pop_front();
+  }
 }
 
 MotionCommand HurdleController::ComputeApproachCommand() const {
@@ -241,17 +351,33 @@ MotionCommand HurdleController::ComputeApproachCommand() const {
   return command;
 }
 
+MotionCommand HurdleController::ComputeRecoveryCommand() const {
+  MotionCommand command;
+  command.vx = std::max(0.0, config_.recovery_forward_vx);
+  const double horizontal_error = last_seen_u_norm_ - 0.50;
+  if (std::abs(horizontal_error) >
+      std::max(0.0, config_.recovery_center_tolerance_norm)) {
+    command.wz = horizontal_error > 0.0
+                     ? -std::abs(config_.recovery_turn_wz)
+                     : std::abs(config_.recovery_turn_wz);
+  }
+  return command;
+}
+
 void HurdleController::ResetToLine(bool clear_ignore) {
   mode_ = HurdleMode::kLineFollow;
   state_enter_sec_ = 0.0;
   hit_history_.clear();
+  acquire_history_.clear();
   tilt_history_.clear();
   lost_count_ = 0;
+  recovery_visible_count_ = 0;
   has_smoothed_ = false;
   tracked_ = {};
   last_command_ = {};
   latched_approach_vx_ = 0.0;
   latched_tilt_vx_ = 0.0;
+  last_seen_u_norm_ = 0.50;
   if (clear_ignore) last_tracking_line_vx_ = 0.0;
   if (clear_ignore) ignore_until_sec_ = 0.0;
 }
@@ -259,3 +385,33 @@ void HurdleController::ResetToLine(bool clear_ignore) {
 void HurdleController::Reset() { ResetToLine(true); }
 
 } // namespace vision_core
+
+/*
+ROS 통합 명령표 (ActionExecutionFeedback.enabled=true)
+형식: MODE -> command_type, mission, mission_phase, velocity, action, camera
+
+LINE_FOLLOW(0)
+  -> VELOCITY, LINE(1), 0, line controller의 vx/vy/wz, NONE, NONE
+HURDLE_APPROACH(1)
+  -> VELOCITY, HURDLE(4), 1, ComputeApproachCommand(), NONE, NONE
+HURDLE_RECOV_FORWARD(7)
+  -> VELOCITY, HURDLE(4), 7, ComputeRecoveryCommand(), NONE, NONE
+HURDLE_RECOV_DOWN(8)
+  -> VELOCITY, HURDLE(4), 8, ComputeRecoveryCommand(), NONE, DOWN(1)
+HURDLE_FAILED(9)
+  -> VELOCITY, HURDLE(4), 9, 0/0/0, NONE, NONE
+HURDLE_CAMERA_TILT_DOWN_AND_SLOW(2)
+  -> VELOCITY, HURDLE(4), 2, latched_tilt_vx/0/0, NONE, DOWN(1)
+HURDLE_RL_STOPPING(6)
+  -> VELOCITY, HURDLE(4), 6, 0/0/0, NONE, NONE
+HURDLE_CONTACT_WALK(3)
+  -> ACTION, HURDLE(4), 3, 0/0/0, HURDLE_CONTACT_WALK(10), NONE
+HURDLE_CROSS(4)
+  -> ACTION, HURDLE(4), 4, 0/0/0, CROSS_HURDLE(11), NONE
+HURDLE_CAMERA_RETURN_TO_LINE(5)
+  -> VELOCITY, HURDLE(4), 5, 0/0/0, NONE, FORWARD(2)
+ACTION은 ControlCommandCoordinator가 action_id를 발급한다. ACK 전에는 ACTION을
+같은 ID로 반복하고, ACK 뒤에는 command_type=HOLD와 0/0/0을 DONE까지 유지한다.
+enabled=false인 기존 호환 호출은 ACTION 대신 controller의 시간 기반 placeholder
+속도/정지를 사용한다. 실제 최종 조합은 control_command.cpp에서 결정한다.
+*/

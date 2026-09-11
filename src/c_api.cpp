@@ -7,6 +7,7 @@
 
 #include "vision_core/coordinate_rectifier.hpp"
 #include "vision_core/ball_controller.hpp"
+#include "vision_core/control_command.hpp"
 #include "vision_core/goal_controller.hpp"
 #include "vision_core/hurdle_controller.hpp"
 #include "vision_core/line_feature_extractor.hpp"
@@ -77,6 +78,7 @@ VisionBallResult FromCoreBallResult(const vision_core::BallResult &result) {
       result.mode == vision_core::BallMode::kFineAdjustForPickup ||
       result.mode == vision_core::BallMode::kPickupBall ||
       result.mode == vision_core::BallMode::kVerifyPickup ||
+      result.mode == vision_core::BallMode::kVerifyPickupObservation ||
       result.mode == vision_core::BallMode::kStandUpAfterPickup;
   return {result.active ? 1 : 0,
           result.reached_pickup_pose ? 1 : 0,
@@ -142,6 +144,11 @@ vision_core::CameraFeedback ToCameraFeedback(int camera_actual_mode,
     mode = vision_core::CameraMode::kGoal;
   }
   return {mode, camera_settled != 0};
+}
+
+vision_core::ActionExecutionFeedback ToActionFeedback(
+    int enabled, int done, int active) {
+  return {enabled != 0, done != 0, active != 0};
 }
 } // namespace
 
@@ -370,9 +377,45 @@ VisionBallResult vision_ball_controller_compute_v3(
   return FromCoreBallResult(result);
 }
 
+VisionBallResult vision_ball_controller_compute_v4(
+    VisionBallControllerHandle handle, VisionObjectTarget ball_target,
+    int image_width, int image_height, double now_sec, double line_vx,
+    int line_reference_valid, int camera_actual_mode, int camera_settled,
+    int action_feedback_enabled, int action_done, int action_active) {
+  auto *controller = static_cast<vision_core::BallController *>(handle);
+  if (controller == nullptr) return {};
+  return FromCoreBallResult(controller->Compute(
+      ToCoreTarget(ball_target), image_width, image_height, now_sec, line_vx,
+      line_reference_valid != 0,
+      ToCameraFeedback(camera_actual_mode, camera_settled),
+      ToActionFeedback(action_feedback_enabled, action_done, action_active)));
+}
+
 void vision_ball_controller_reset(VisionBallControllerHandle handle) {
   auto *controller = static_cast<vision_core::BallController *>(handle);
   if (controller != nullptr) controller->Reset();
+}
+
+int vision_ball_controller_has_ball(VisionBallControllerHandle handle) {
+  auto *controller = static_cast<vision_core::BallController *>(handle);
+  return controller != nullptr && controller->HasBall() ? 1 : 0;
+}
+
+int vision_ball_controller_pickup_failed(VisionBallControllerHandle handle) {
+  auto *controller = static_cast<vision_core::BallController *>(handle);
+  return controller != nullptr && controller->PickupFailed() ? 1 : 0;
+}
+
+void vision_ball_controller_set_has_ball(VisionBallControllerHandle handle,
+                                         int has_ball) {
+  auto *controller = static_cast<vision_core::BallController *>(handle);
+  if (controller != nullptr) controller->SetHasBall(has_ball != 0);
+}
+
+int vision_ball_controller_pickup_attempt_count(
+    VisionBallControllerHandle handle) {
+  auto *controller = static_cast<vision_core::BallController *>(handle);
+  return controller != nullptr ? controller->PickupAttemptCount() : 0;
 }
 
 VisionHurdleControllerHandle vision_hurdle_controller_create(void) {
@@ -406,6 +449,20 @@ VisionHurdleResult vision_hurdle_controller_compute_v2(
       ToCameraFeedback(camera_actual_mode, camera_settled)));
 }
 
+VisionHurdleResult vision_hurdle_controller_compute_v3(
+    VisionHurdleControllerHandle handle, VisionObjectTarget hurdle_target,
+    int image_width, int image_height, double now_sec, double line_vx,
+    int line_reference_valid, int camera_actual_mode, int camera_settled,
+    int action_feedback_enabled, int action_done, int action_active) {
+  auto *controller = static_cast<vision_core::HurdleController *>(handle);
+  if (controller == nullptr) return {};
+  return FromCoreHurdleResult(controller->Compute(
+      ToCoreTarget(hurdle_target), image_width, image_height, now_sec, line_vx,
+      line_reference_valid != 0,
+      ToCameraFeedback(camera_actual_mode, camera_settled),
+      ToActionFeedback(action_feedback_enabled, action_done, action_active)));
+}
+
 void vision_hurdle_controller_reset(VisionHurdleControllerHandle handle) {
   auto *controller = static_cast<vision_core::HurdleController *>(handle);
   if (controller != nullptr) controller->Reset();
@@ -436,6 +493,27 @@ void vision_goal_controller_start_after_pickup(
   if (controller != nullptr) controller->StartAfterPickup(now_sec);
 }
 
+void vision_goal_controller_set_has_ball(VisionGoalControllerHandle handle,
+                                         int has_ball) {
+  auto *controller = static_cast<vision_core::GoalController *>(handle);
+  if (controller != nullptr) controller->SetHasBall(has_ball != 0);
+}
+
+void vision_goal_controller_update_ball_state(
+    VisionGoalControllerHandle handle, int has_ball, int ball_mode) {
+  auto *controller = static_cast<vision_core::GoalController *>(handle);
+  if (controller == nullptr) return;
+  vision_core::BallResult ball_result;
+  ball_result.has_ball = has_ball != 0;
+  ball_result.mode = static_cast<vision_core::BallMode>(ball_mode);
+  controller->UpdateBallState(ball_result);
+}
+
+int vision_goal_controller_has_ball(VisionGoalControllerHandle handle) {
+  auto *controller = static_cast<vision_core::GoalController *>(handle);
+  return controller != nullptr && controller->HasBall() ? 1 : 0;
+}
+
 VisionGoalResult vision_goal_controller_compute(
     VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
     int image_width, int image_height, double now_sec,
@@ -462,6 +540,24 @@ VisionGoalResult vision_goal_controller_compute_v2(
       ToCoreTarget(goal_target), ToCoreTarget(backboard_target), core_pose,
       image_width, image_height, now_sec, line_reference_valid != 0,
       ToCameraFeedback(camera_actual_mode, camera_settled)));
+}
+
+VisionGoalResult vision_goal_controller_compute_v3(
+    VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
+    VisionObjectTarget backboard_target, VisionGoalPoseObservation goal_pose,
+    int image_width, int image_height, double now_sec,
+    int line_reference_valid, int camera_actual_mode, int camera_settled,
+    int action_feedback_enabled, int action_done, int action_active) {
+  auto *controller = static_cast<vision_core::GoalController *>(handle);
+  if (controller == nullptr) return {};
+  const vision_core::GoalPoseObservation core_pose{
+      goal_pose.valid != 0, goal_pose.x_m, goal_pose.z_m,
+      goal_pose.yaw_rad, goal_pose.confidence};
+  return FromCoreGoalResult(controller->Compute(
+      ToCoreTarget(goal_target), ToCoreTarget(backboard_target), core_pose,
+      image_width, image_height, now_sec, line_reference_valid != 0,
+      ToCameraFeedback(camera_actual_mode, camera_settled),
+      ToActionFeedback(action_feedback_enabled, action_done, action_active)));
 }
 
 void vision_goal_controller_reset(VisionGoalControllerHandle handle) {
@@ -509,8 +605,18 @@ VisionSelectedMissionCommand vision_select_mission_command(
     VisionBallResult ball_result, VisionHurdleResult hurdle_result,
     VisionGoalResult goal_result, double line_vx, double line_vy,
     double line_wz) {
+  return vision_select_mission_command_v2(
+      ball_result, hurdle_result, goal_result, 0,
+      line_vx, line_vy, line_wz);
+}
+
+VisionSelectedMissionCommand vision_select_mission_command_v2(
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, int ball_has_ball,
+    double line_vx, double line_vy, double line_wz) {
   vision_core::BallResult core_ball;
   core_ball.active = ball_result.active != 0;
+  core_ball.has_ball = ball_has_ball != 0;
   core_ball.mode = static_cast<vision_core::BallMode>(ball_result.mode);
   core_ball.command = {ball_result.vx, ball_result.vy, ball_result.wz};
 
@@ -541,6 +647,103 @@ VisionSelectedMissionCommand vision_select_mission_command(
           selected.command.wz,
           static_cast<int>(selected.source),
           active_mode};
+}
+
+VisionControlCommandCoordinatorHandle
+vision_control_command_coordinator_create(void) {
+  return new vision_core::ControlCommandCoordinator();
+}
+
+void vision_control_command_coordinator_destroy(
+    VisionControlCommandCoordinatorHandle handle) {
+  delete static_cast<vision_core::ControlCommandCoordinator *>(handle);
+}
+
+VisionControlCommand vision_control_command_compute(
+    VisionControlCommandCoordinatorHandle handle,
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, double line_vx, double line_vy,
+    double line_wz, uint64_t feedback_action_id, int action_acknowledged,
+    int action_done) {
+  return vision_control_command_compute_v2(
+      handle, ball_result, hurdle_result, goal_result, 0,
+      line_vx, line_vy, line_wz, feedback_action_id,
+      action_acknowledged, action_done);
+}
+
+VisionControlCommand vision_control_command_compute_v2(
+    VisionControlCommandCoordinatorHandle handle,
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, int ball_has_ball,
+    double line_vx, double line_vy, double line_wz,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done) {
+  auto *coordinator =
+      static_cast<vision_core::ControlCommandCoordinator *>(handle);
+  if (coordinator == nullptr) return {};
+
+  vision_core::BallResult core_ball;
+  core_ball.active = ball_result.active != 0;
+  core_ball.has_ball = ball_has_ball != 0;
+  core_ball.mode = static_cast<vision_core::BallMode>(ball_result.mode);
+  core_ball.command = {ball_result.vx, ball_result.vy, ball_result.wz};
+  if (core_ball.mode == vision_core::BallMode::kFineAdjustForPickup) {
+    core_ball.action_request =
+        vision_core::BallActionRequest::kFineAdjustForward;
+  } else if (core_ball.mode == vision_core::BallMode::kPickupBall) {
+    core_ball.action_request = vision_core::BallActionRequest::kPickup;
+  } else if (core_ball.mode == vision_core::BallMode::kStandUpAfterPickup) {
+    core_ball.action_request = vision_core::BallActionRequest::kStandUp;
+  } else if (core_ball.mode == vision_core::BallMode::kVerifyPickup) {
+    core_ball.action_request = vision_core::BallActionRequest::kVerifyPickup;
+  }
+  if (core_ball.mode == vision_core::BallMode::kTiltCameraDownAndApproach ||
+      core_ball.mode == vision_core::BallMode::kBallRecoveryDown) {
+    core_ball.camera_request = vision_core::CameraRequest::kDown;
+  } else if (core_ball.mode == vision_core::BallMode::kReturnCameraToLine) {
+    core_ball.camera_request = vision_core::CameraRequest::kForward;
+  }
+
+  vision_core::HurdleResult core_hurdle;
+  core_hurdle.active = hurdle_result.active != 0;
+  core_hurdle.mode =
+      static_cast<vision_core::HurdleMode>(hurdle_result.mode);
+  core_hurdle.action_request =
+      static_cast<vision_core::HurdleActionRequest>(
+          hurdle_result.action_request);
+  core_hurdle.camera_request = static_cast<vision_core::CameraRequest>(
+      hurdle_result.camera_request);
+  core_hurdle.command =
+      {hurdle_result.vx, hurdle_result.vy, hurdle_result.wz};
+
+  vision_core::GoalResult core_goal;
+  core_goal.active = goal_result.active != 0;
+  core_goal.mode = static_cast<vision_core::GoalMode>(goal_result.mode);
+  core_goal.action_request = static_cast<vision_core::GoalActionRequest>(
+      goal_result.action_request);
+  core_goal.camera_request =
+      static_cast<vision_core::CameraRequest>(goal_result.camera_request);
+  core_goal.command = {goal_result.vx, goal_result.vy, goal_result.wz};
+
+  const auto command = coordinator->Compute(
+      core_ball, core_hurdle, core_goal, {line_vx, line_vy, line_wz},
+      {feedback_action_id, action_acknowledged != 0, action_done != 0});
+  return {static_cast<int>(command.command_type),
+          static_cast<int>(command.mission),
+          command.mission_phase,
+          static_cast<int>(command.control_phase),
+          command.velocity.vx,
+          command.velocity.vy,
+          command.velocity.wz,
+          static_cast<int>(command.action),
+          command.action_id,
+          static_cast<int>(command.camera_request)};
+}
+
+void vision_control_command_coordinator_reset(
+    VisionControlCommandCoordinatorHandle handle) {
+  auto *coordinator =
+      static_cast<vision_core::ControlCommandCoordinator *>(handle);
+  if (coordinator != nullptr) coordinator->Reset();
 }
 
 } // extern "C"

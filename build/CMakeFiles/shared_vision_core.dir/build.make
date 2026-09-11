@@ -181,10 +181,52 @@ CMakeFiles/shared_vision_core.dir/src/motion_command_selector.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/shared_vision_core.dir/src/motion_command_selector.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/noh/vision_core/src/motion_command_selector.cpp -o CMakeFiles/shared_vision_core.dir/src/motion_command_selector.cpp.s
 
+CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o: CMakeFiles/shared_vision_core.dir/flags.make
+CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o: /home/noh/vision_core/src/p2p_motion_quantizer.cpp
+CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o: CMakeFiles/shared_vision_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o -MF CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o.d -o CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o -c /home/noh/vision_core/src/p2p_motion_quantizer.cpp
+
+CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/noh/vision_core/src/p2p_motion_quantizer.cpp > CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.i
+
+CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/noh/vision_core/src/p2p_motion_quantizer.cpp -o CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.s
+
+CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o: CMakeFiles/shared_vision_core.dir/flags.make
+CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o: /home/noh/vision_core/src/control_command.cpp
+CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o: CMakeFiles/shared_vision_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o -MF CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o.d -o CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o -c /home/noh/vision_core/src/control_command.cpp
+
+CMakeFiles/shared_vision_core.dir/src/control_command.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/shared_vision_core.dir/src/control_command.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/noh/vision_core/src/control_command.cpp > CMakeFiles/shared_vision_core.dir/src/control_command.cpp.i
+
+CMakeFiles/shared_vision_core.dir/src/control_command.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/shared_vision_core.dir/src/control_command.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/noh/vision_core/src/control_command.cpp -o CMakeFiles/shared_vision_core.dir/src/control_command.cpp.s
+
+CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o: CMakeFiles/shared_vision_core.dir/flags.make
+CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o: /home/noh/vision_core/src/mission_controller.cpp
+CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o: CMakeFiles/shared_vision_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o -MF CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o.d -o CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o -c /home/noh/vision_core/src/mission_controller.cpp
+
+CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/noh/vision_core/src/mission_controller.cpp > CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.i
+
+CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/noh/vision_core/src/mission_controller.cpp -o CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.s
+
 CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o: CMakeFiles/shared_vision_core.dir/flags.make
 CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o: /home/noh/vision_core/src/c_api.cpp
 CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o: CMakeFiles/shared_vision_core.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o -MF CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o.d -o CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o -c /home/noh/vision_core/src/c_api.cpp
 
 CMakeFiles/shared_vision_core.dir/src/c_api.cpp.i: cmake_force
@@ -205,6 +247,9 @@ shared_vision_core_OBJECTS = \
 "CMakeFiles/shared_vision_core.dir/src/hurdle_controller.cpp.o" \
 "CMakeFiles/shared_vision_core.dir/src/goal_controller.cpp.o" \
 "CMakeFiles/shared_vision_core.dir/src/motion_command_selector.cpp.o" \
+"CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o" \
+"CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o" \
+"CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o" \
 "CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o"
 
 # External object files for target shared_vision_core
@@ -218,10 +263,13 @@ libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/ball_controller.
 libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/hurdle_controller.cpp.o
 libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/goal_controller.cpp.o
 libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/motion_command_selector.cpp.o
+libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/p2p_motion_quantizer.cpp.o
+libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/control_command.cpp.o
+libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/mission_controller.cpp.o
 libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/src/c_api.cpp.o
 libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/build.make
 libshared_vision_core.so: CMakeFiles/shared_vision_core.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Linking CXX shared library libshared_vision_core.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Linking CXX shared library libshared_vision_core.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/shared_vision_core.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

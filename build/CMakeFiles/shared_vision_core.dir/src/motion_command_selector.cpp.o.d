@@ -51,6 +51,15 @@ CMakeFiles/shared_vision_core.dir/src/motion_command_selector.cpp.o: \
  /usr/include/c++/11/bits/enable_special_members.h \
  /usr/include/c++/11/bits/functional_hash.h \
  /home/noh/vision_core/include/vision_core/types.hpp \
+ /usr/include/c++/11/cstdint \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stdint.h /usr/include/stdint.h \
+ /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+ /usr/include/x86_64-linux-gnu/bits/types.h \
+ /usr/include/x86_64-linux-gnu/bits/typesizes.h \
+ /usr/include/x86_64-linux-gnu/bits/time64.h \
+ /usr/include/x86_64-linux-gnu/bits/wchar.h \
+ /usr/include/x86_64-linux-gnu/bits/stdint-intn.h \
+ /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
  /home/noh/vision_core/include/vision_core/goal_controller.hpp \
  /home/noh/vision_core/include/vision_core/hurdle_controller.hpp \
  /home/noh/vision_core/include/vision_core/line_velocity_controller.hpp \

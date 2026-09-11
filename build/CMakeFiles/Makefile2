@@ -68,6 +68,9 @@ all: CMakeFiles/shared_vision_core_ball_controller_test.dir/all
 all: CMakeFiles/shared_vision_core_hurdle_controller_test.dir/all
 all: CMakeFiles/shared_vision_core_goal_controller_test.dir/all
 all: CMakeFiles/shared_vision_core_line_detection_stability_test.dir/all
+all: CMakeFiles/shared_vision_core_control_command_test.dir/all
+all: CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/all
+all: CMakeFiles/shared_vision_core_mission_controller_test.dir/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
@@ -108,6 +111,9 @@ clean: CMakeFiles/shared_vision_core_ball_controller_test.dir/clean
 clean: CMakeFiles/shared_vision_core_hurdle_controller_test.dir/clean
 clean: CMakeFiles/shared_vision_core_goal_controller_test.dir/clean
 clean: CMakeFiles/shared_vision_core_line_detection_stability_test.dir/clean
+clean: CMakeFiles/shared_vision_core_control_command_test.dir/clean
+clean: CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/clean
+clean: CMakeFiles/shared_vision_core_mission_controller_test.dir/clean
 .PHONY : clean
 
 #=============================================================================
@@ -845,12 +851,12 @@ CMakeFiles/ContinuousSubmit.dir/clean:
 CMakeFiles/shared_vision_core.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core.dir/build.make CMakeFiles/shared_vision_core.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10 "Built target shared_vision_core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12,13 "Built target shared_vision_core"
 .PHONY : CMakeFiles/shared_vision_core.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/shared_vision_core.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 10
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 13
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
 .PHONY : CMakeFiles/shared_vision_core.dir/rule
@@ -871,12 +877,12 @@ CMakeFiles/shared_vision_core.dir/clean:
 CMakeFiles/shared_vision_core_ball_controller_test.dir/all: CMakeFiles/shared_vision_core.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_ball_controller_test.dir/build.make CMakeFiles/shared_vision_core_ball_controller_test.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_ball_controller_test.dir/build.make CMakeFiles/shared_vision_core_ball_controller_test.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=11,12 "Built target shared_vision_core_ball_controller_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=14,15 "Built target shared_vision_core_ball_controller_test"
 .PHONY : CMakeFiles/shared_vision_core_ball_controller_test.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/shared_vision_core_ball_controller_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 12
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_ball_controller_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
 .PHONY : CMakeFiles/shared_vision_core_ball_controller_test.dir/rule
@@ -897,12 +903,12 @@ CMakeFiles/shared_vision_core_ball_controller_test.dir/clean:
 CMakeFiles/shared_vision_core_hurdle_controller_test.dir/all: CMakeFiles/shared_vision_core.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_hurdle_controller_test.dir/build.make CMakeFiles/shared_vision_core_hurdle_controller_test.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_hurdle_controller_test.dir/build.make CMakeFiles/shared_vision_core_hurdle_controller_test.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=15,16 "Built target shared_vision_core_hurdle_controller_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=20,21 "Built target shared_vision_core_hurdle_controller_test"
 .PHONY : CMakeFiles/shared_vision_core_hurdle_controller_test.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/shared_vision_core_hurdle_controller_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 12
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_hurdle_controller_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
 .PHONY : CMakeFiles/shared_vision_core_hurdle_controller_test.dir/rule
@@ -923,12 +929,12 @@ CMakeFiles/shared_vision_core_hurdle_controller_test.dir/clean:
 CMakeFiles/shared_vision_core_goal_controller_test.dir/all: CMakeFiles/shared_vision_core.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_goal_controller_test.dir/build.make CMakeFiles/shared_vision_core_goal_controller_test.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_goal_controller_test.dir/build.make CMakeFiles/shared_vision_core_goal_controller_test.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=13,14 "Built target shared_vision_core_goal_controller_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=18,19 "Built target shared_vision_core_goal_controller_test"
 .PHONY : CMakeFiles/shared_vision_core_goal_controller_test.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/shared_vision_core_goal_controller_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 12
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_goal_controller_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
 .PHONY : CMakeFiles/shared_vision_core_goal_controller_test.dir/rule
@@ -949,12 +955,12 @@ CMakeFiles/shared_vision_core_goal_controller_test.dir/clean:
 CMakeFiles/shared_vision_core_line_detection_stability_test.dir/all: CMakeFiles/shared_vision_core.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build.make CMakeFiles/shared_vision_core_line_detection_stability_test.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build.make CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=17,18 "Built target shared_vision_core_line_detection_stability_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=22,23 "Built target shared_vision_core_line_detection_stability_test"
 .PHONY : CMakeFiles/shared_vision_core_line_detection_stability_test.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/shared_vision_core_line_detection_stability_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 12
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_line_detection_stability_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
 .PHONY : CMakeFiles/shared_vision_core_line_detection_stability_test.dir/rule
@@ -967,6 +973,84 @@ shared_vision_core_line_detection_stability_test: CMakeFiles/shared_vision_core_
 CMakeFiles/shared_vision_core_line_detection_stability_test.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_line_detection_stability_test.dir/build.make CMakeFiles/shared_vision_core_line_detection_stability_test.dir/clean
 .PHONY : CMakeFiles/shared_vision_core_line_detection_stability_test.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/shared_vision_core_control_command_test.dir
+
+# All Build rule for target.
+CMakeFiles/shared_vision_core_control_command_test.dir/all: CMakeFiles/shared_vision_core.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=16,17 "Built target shared_vision_core_control_command_test"
+.PHONY : CMakeFiles/shared_vision_core_control_command_test.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/shared_vision_core_control_command_test.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_control_command_test.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
+.PHONY : CMakeFiles/shared_vision_core_control_command_test.dir/rule
+
+# Convenience name for target.
+shared_vision_core_control_command_test: CMakeFiles/shared_vision_core_control_command_test.dir/rule
+.PHONY : shared_vision_core_control_command_test
+
+# clean rule for target.
+CMakeFiles/shared_vision_core_control_command_test.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_control_command_test.dir/build.make CMakeFiles/shared_vision_core_control_command_test.dir/clean
+.PHONY : CMakeFiles/shared_vision_core_control_command_test.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir
+
+# All Build rule for target.
+CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/all: CMakeFiles/shared_vision_core.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=26,27 "Built target shared_vision_core_p2p_motion_quantizer_test"
+.PHONY : CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
+.PHONY : CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/rule
+
+# Convenience name for target.
+shared_vision_core_p2p_motion_quantizer_test: CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/rule
+.PHONY : shared_vision_core_p2p_motion_quantizer_test
+
+# clean rule for target.
+CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/build.make CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/clean
+.PHONY : CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/shared_vision_core_mission_controller_test.dir
+
+# All Build rule for target.
+CMakeFiles/shared_vision_core_mission_controller_test.dir/all: CMakeFiles/shared_vision_core.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/noh/vision_core/build/CMakeFiles --progress-num=24,25 "Built target shared_vision_core_mission_controller_test"
+.PHONY : CMakeFiles/shared_vision_core_mission_controller_test.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/shared_vision_core_mission_controller_test.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 15
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/shared_vision_core_mission_controller_test.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/noh/vision_core/build/CMakeFiles 0
+.PHONY : CMakeFiles/shared_vision_core_mission_controller_test.dir/rule
+
+# Convenience name for target.
+shared_vision_core_mission_controller_test: CMakeFiles/shared_vision_core_mission_controller_test.dir/rule
+.PHONY : shared_vision_core_mission_controller_test
+
+# clean rule for target.
+CMakeFiles/shared_vision_core_mission_controller_test.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared_vision_core_mission_controller_test.dir/build.make CMakeFiles/shared_vision_core_mission_controller_test.dir/clean
+.PHONY : CMakeFiles/shared_vision_core_mission_controller_test.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

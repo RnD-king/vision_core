@@ -11,6 +11,8 @@ namespace {
 using vision_core::CameraFeedback;
 using vision_core::CameraMode;
 using vision_core::CameraRequest;
+using vision_core::ActionExecutionFeedback;
+using vision_core::BallMode;
 using vision_core::GoalActionRequest;
 using vision_core::GoalConfig;
 using vision_core::GoalController;
@@ -61,12 +63,18 @@ void TestGoalApproachFineAlignAndReturnSequence() {
   cfg.shoot_placeholder_sec = 2.0;
   GoalController controller(cfg);
   controller.StartAfterPickup(0.0);
+  const auto goal = Target(0.50, 0.40);
 
   auto result = controller.Compute(
-      std::nullopt, 100, 100, 1.99, false, LineView());
+      std::nullopt, 100, 100, 0.0, false, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+  result = controller.Compute(goal, 100, 100, 0.0, false, LineView());
   assert(result.mode == GoalMode::kPostPickupWait);
   result = controller.Compute(
-      std::nullopt, 100, 100, 2.0, false, LineView());
+      goal, 100, 100, 1.99, false, LineView());
+  assert(result.mode == GoalMode::kPostPickupWait);
+  result = controller.Compute(
+      goal, 100, 100, 2.0, false, LineView());
   assert(result.mode == GoalMode::kTiltCameraToGoal);
   assert(result.camera_request == CameraRequest::kGoal);
 
@@ -80,7 +88,6 @@ void TestGoalApproachFineAlignAndReturnSequence() {
       std::nullopt, 100, 100, 2.2, false, GoalView());
   assert(result.mode == GoalMode::kSearch);
 
-  const auto goal = Target(0.50, 0.40);
   const auto backboard = BackboardTarget();
   result = controller.Compute(goal, backboard, Pose(0.0, 1.50, 0.0),
                               100, 100, 2.22, false, GoalView());
@@ -173,13 +180,12 @@ void TestApproachContinuesWithBackboardOnly() {
   cfg.smooth_alpha = 1.0;
   GoalController controller(cfg);
   controller.StartAfterPickup(0.0);
-
-  controller.Compute(std::nullopt, 100, 100, 0.0, false, GoalView());
-  auto result = controller.Compute(std::nullopt, 100, 100, 0.1, false,
-                                   GoalView());
+  const auto goal = Target(0.50, 0.30);
+  auto result = controller.Compute(goal, 100, 100, 0.0, false, LineView());
+  assert(result.mode == GoalMode::kTiltCameraToGoal);
+  result = controller.Compute(goal, 100, 100, 0.1, false, GoalView());
   assert(result.mode == GoalMode::kSearch);
 
-  const auto goal = Target(0.50, 0.30);
   const auto backboard = BackboardTarget();
   result = controller.Compute(goal, backboard, Pose(0.0, 1.20, 0.0),
                               100, 100, 0.2, false, GoalView());
@@ -187,11 +193,94 @@ void TestApproachContinuesWithBackboardOnly() {
 
   // 전체 골대 bbox가 사라져도 백보드가 보이면 APPROACH를 유지한다.
   result = controller.Compute(std::nullopt, backboard,
-                              Pose(0.0, 1.10, 0.0), 100, 100, 0.3,
+                              Pose(0.0, 1.10, 0.0), 100, 100, 0.4,
                               false, GoalView());
   assert(result.mode == GoalMode::kApproach);
   assert(result.tracked.visible);
   assert(result.command.vx > 0.0);
+}
+
+void TestFineAdjustUsesActionHoldInsteadOfRlVelocity() {
+  GoalConfig cfg;
+  cfg.stable_window = 1;
+  cfg.stable_min_hits = 1;
+  cfg.smooth_alpha = 1.0;
+  cfg.rl_stop_duration_sec = 0.5;
+  GoalController controller(cfg);
+  controller.StartAfterPickup(0.0);
+  const auto goal = Target(0.50, 0.30);
+  const auto backboard = BackboardTarget();
+  const ActionExecutionFeedback waiting{true, false, false};
+  const ActionExecutionFeedback active{true, false, true};
+  const ActionExecutionFeedback done{true, true, false};
+
+  auto result = controller.Compute(goal, std::nullopt, {}, 100, 100, 0.0,
+                                   false, LineView(), waiting);
+  assert(result.mode == GoalMode::kTiltCameraToGoal);
+  result = controller.Compute(goal, std::nullopt, {}, 100, 100, 0.1,
+                              false, GoalView(), waiting);
+  assert(result.mode == GoalMode::kSearch);
+
+  result = controller.Compute(goal, backboard, Pose(0.10, 0.75, 0.20),
+                              100, 100, 0.2, false, GoalView(), waiting);
+  assert(result.mode == GoalMode::kRlStopping);
+  assert(result.command.vx == 0.0);
+
+  result = controller.Compute(goal, backboard, Pose(0.10, 0.75, 0.20),
+                              100, 100, 0.7, false, GoalView(), waiting);
+  assert(result.mode == GoalMode::kFineAdjust);
+  assert(result.action_request == GoalActionRequest::kFineAdjust);
+  assert(result.command.wz < 0.0);
+
+  result = controller.Compute(goal, backboard, Pose(0.10, 0.75, 0.20),
+                              100, 100, 0.8, false, GoalView(), active);
+  assert(result.action_request == GoalActionRequest::kFineAdjust);
+
+  result = controller.Compute(goal, backboard, Pose(0.10, 0.75, 0.20),
+                              100, 100, 0.9, false, GoalView(), done);
+  assert(result.action_request == GoalActionRequest::kFineAdjustHold);
+  assert(result.command.vx == 0.0);
+  assert(result.command.vy == 0.0);
+  assert(result.command.wz == 0.0);
+
+  result = controller.Compute(goal, backboard, Pose(0.10, 0.75, 0.20),
+                              100, 100, 1.0, false, GoalView(), active);
+  assert(result.action_request == GoalActionRequest::kFineAdjustHold);
+
+  result = controller.Compute(goal, backboard, Pose(0.10, 0.75, 0.20),
+                              100, 100, 1.1, false, GoalView(), done);
+  assert(result.action_request == GoalActionRequest::kFineAdjust);
+  assert(result.command.wz < 0.0);
+}
+
+void TestGoalStartsOnlyAfterCarryingBallAndBallMissionEnds() {
+  GoalConfig cfg;
+  cfg.stable_window = 3;
+  cfg.stable_min_hits = 2;
+  cfg.post_pickup_wait_sec = 1.0;
+  GoalController controller(cfg);
+  const auto goal = Target(0.50, 0.30);
+
+  // 공이 없으면 골대가 안정 검출되어도 LINE_FOLLOW를 유지한다.
+  auto result = controller.Compute(goal, 100, 100, 0.0, true, LineView());
+  result = controller.Compute(goal, 100, 100, 0.1, true, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+
+  vision_core::BallResult ball;
+  ball.has_ball = true;
+  ball.mode = BallMode::kPostPickupBackAway;
+  controller.UpdateBallState(ball);
+  result = controller.Compute(goal, 100, 100, 0.2, false, LineView());
+  result = controller.Compute(goal, 100, 100, 0.3, false, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+
+  // Ball mode가 완전히 끝난 시점부터 골대 안정화 프레임을 새로 센다.
+  ball.mode = BallMode::kLineFollow;
+  controller.UpdateBallState(ball);
+  result = controller.Compute(goal, 100, 100, 0.4, true, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+  result = controller.Compute(goal, 100, 100, 0.5, true, LineView());
+  assert(result.mode == GoalMode::kPostPickupWait);
 }
 
 } // namespace
@@ -200,6 +289,8 @@ int main() {
   TestGoalApproachFineAlignAndReturnSequence();
   TestBackboardEdgeDepthGeometry();
   TestApproachContinuesWithBackboardOnly();
+  TestFineAdjustUsesActionHoldInsteadOfRlVelocity();
+  TestGoalStartsOnlyAfterCarryingBallAndBallMissionEnds();
   std::cout << "goal controller tests passed\n";
   return 0;
 }

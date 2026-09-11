@@ -30,6 +30,12 @@ const char *BallController::ModeName(BallMode mode) {
   case BallMode::kReturnCameraToLine: return "CAMERA_RETURN_TO_LINE";
   case BallMode::kBallRecoveryForward: return "BALL_RECOV_FORWARD";
   case BallMode::kBallRecoveryDown: return "BALL_RECOV_DOWN";
+  case BallMode::kRlStoppingForPickup: return "BALL_RL_STOPPING";
+  case BallMode::kPostPickupBackAway: return "BALL_POST_PICKUP_BACK_AWAY";
+  case BallMode::kPostPickupLineRecovery:
+    return "BALL_POST_PICKUP_LINE_RECOVERY";
+  case BallMode::kVerifyPickupObservation:
+    return "BALL_PICKUP_VERIFY_OBSERVATION";
   }
   return "UNKNOWN";
 }
@@ -76,7 +82,9 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
   case BallMode::kFineAdjustForPickup:
   case BallMode::kPickupBall:
   case BallMode::kVerifyPickup:
+  case BallMode::kVerifyPickupObservation:
   case BallMode::kStandUpAfterPickup:
+  case BallMode::kRlStoppingForPickup:
     feedback.actual_mode = CameraMode::kDown;
     feedback.settled = true;
     break;
@@ -96,6 +104,11 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     break;
   case BallMode::kBallRecoveryDown:
     feedback.actual_mode = CameraMode::kDown;
+    feedback.settled = true;
+    break;
+  case BallMode::kPostPickupBackAway:
+  case BallMode::kPostPickupLineRecovery:
+    feedback.actual_mode = CameraMode::kForward;
     feedback.settled = true;
     break;
   }
@@ -118,6 +131,17 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
                                    double now_sec, double line_vx,
                                    bool line_reference_valid,
                                    const CameraFeedback &camera_feedback) {
+  return Compute(ball_target, image_width, image_height, now_sec, line_vx,
+                 line_reference_valid, camera_feedback,
+                 ActionExecutionFeedback{});
+}
+
+BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_target,
+                                   int image_width, int image_height,
+                                   double now_sec, double line_vx,
+                                   bool line_reference_valid,
+                                   const CameraFeedback &camera_feedback,
+                                   const ActionExecutionFeedback &action_feedback) {
   // 공 관측을 의도적으로 무시하는 동안에도 다음 미션에 사용할 기준속도를 갱신한다.
   // 복구/관성주행/탐색 명령은 정상 추종속도가 아니면서 양수일 수 있으므로
   // line_reference_valid에 반드시 false를 전달해야 한다.
@@ -125,10 +149,25 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     last_tracking_line_vx_ = line_vx;
   }
 
+  // 공을 들고 라인을 걷는 동안에는 바닥이나 손 주변에서 다시 잡힌 ball bbox로
+  // 두 번째 공 미션이 시작되면 안 된다. 외부 mission adapter는 슛 완료 뒤
+  // SetHasBall(false)를 호출해 다음 공 미션을 허용할 수 있다.
+  if (mode_ == BallMode::kLineFollow && has_ball_) {
+    BallResult carrying;
+    carrying.mode = BallMode::kLineFollow;
+    carrying.has_ball = true;
+    carrying.pickup_failed = pickup_failed_;
+    carrying.pickup_attempt_count = pickup_attempt_count_;
+    return carrying;
+  }
+
   if (mode_ == BallMode::kLineFollow &&
       now_sec + kTimeEpsilon < ignore_ball_until_sec_) {
     BallResult ignored;
     ignored.mode = BallMode::kLineFollow;
+    ignored.has_ball = has_ball_;
+    ignored.pickup_failed = pickup_failed_;
+    ignored.pickup_attempt_count = pickup_attempt_count_;
     return ignored;
   }
 
@@ -158,6 +197,9 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     // 명시적으로 유효한 정상 추종속도를 고정한다. 이후 점선 복구 명령은 계속
     // 계산되지만 원거리 공 접근속도에는 사용하지 않는다.
     latched_far_line_vx_ = std::max(0.0, last_tracking_line_vx_);
+    has_ball_ = false;
+    pickup_failed_ = false;
+    pickup_attempt_count_ = 0;
     mode_ = BallMode::kApproachBall;
     state_enter_sec_ = now_sec;
   }
@@ -181,6 +223,9 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
   BallResult result;
   result.mode = mode_;
   result.tracked = smoothed_;
+  result.has_ball = has_ball_;
+  result.pickup_failed = pickup_failed_;
+  result.pickup_attempt_count = pickup_attempt_count_;
   switch (mode_) {
   case BallMode::kLineFollow:
     return result;
@@ -226,13 +271,17 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
       ++recovery_visible_count_;
       if (recovery_visible_count_ >=
           std::max(1, config_.recovery_reacquire_min_hits)) {
-        mode_ = recovery_down ? BallMode::kFineAdjustForPickup
+        mode_ = recovery_down ? (action_feedback.enabled
+                                     ? BallMode::kRlStoppingForPickup
+                                     : BallMode::kFineAdjustForPickup)
                               : BallMode::kApproachBall;
         state_enter_sec_ = now_sec;
         result.mode = mode_;
         result.camera_request = CameraRequest::kNone;
         result.command = recovery_down
-                             ? ComputeFineAdjustPlaceholderCommand()
+                             ? (action_feedback.enabled
+                                    ? MotionCommand{}
+                                    : ComputeFineAdjustPlaceholderCommand())
                              : ComputeFarCommand(smoothed_);
         if (!recovery_down) {
           PushRecentCommand(result.command);
@@ -247,6 +296,7 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
         now_sec - state_enter_sec_ + kTimeEpsilon >=
             std::max(0.0, config_.recovery_timeout_sec)) {
       if (recovery_down) {
+        post_pickup_return_ = false;
         mode_ = BallMode::kReturnCameraToLine;
         state_enter_sec_ = now_sec;
         ClearTrackingState(false);
@@ -269,14 +319,18 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     last_command_ = result.command;
     if (camera_feedback.actual_mode == CameraMode::kDown &&
         camera_feedback.settled) {
-      mode_ = smoothed_.visible ? BallMode::kFineAdjustForPickup
+      mode_ = smoothed_.visible ? (action_feedback.enabled
+                                       ? BallMode::kRlStoppingForPickup
+                                       : BallMode::kFineAdjustForPickup)
                                 : BallMode::kBallRecoveryDown;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
       result.camera_request = smoothed_.visible ? CameraRequest::kNone
                                                 : CameraRequest::kDown;
       result.command = smoothed_.visible
-                           ? ComputeFineAdjustPlaceholderCommand()
+                           ? (action_feedback.enabled
+                                  ? MotionCommand{}
+                                  : ComputeFineAdjustPlaceholderCommand())
                            : ComputeRecoveryCommand();
       last_command_ = result.command;
     } else if (now_sec - state_enter_sec_ + kTimeEpsilon >=
@@ -287,16 +341,34 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
       last_command_ = {};
     }
     return result;
-  case BallMode::kFineAdjustForPickup:
+  case BallMode::kRlStoppingForPickup:
     result.active = true;
-    result.command = ComputeFineAdjustPlaceholderCommand();
-    last_command_ = result.command;
+    result.command = {};
+    last_command_ = {};
     if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.fine_adjust_placeholder_duration_sec)) {
-      mode_ = BallMode::kPickupBall;
+        std::max(0.0, config_.rl_stop_duration_sec)) {
+      mode_ = BallMode::kFineAdjustForPickup;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
+      result.action_request = BallActionRequest::kFineAdjustForward;
+    }
+    return result;
+  case BallMode::kFineAdjustForPickup:
+    result.active = true;
+    result.action_request = BallActionRequest::kFineAdjustForward;
+    result.command = {};
+    last_command_ = {};
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0, config_.fine_adjust_placeholder_duration_sec))) {
+      mode_ = BallMode::kPickupBall;
+      pickup_attempt_count_ = 1;
+      state_enter_sec_ = now_sec;
+      result.mode = mode_;
+      result.pickup_attempt_count = pickup_attempt_count_;
       result.reached_pickup_pose = true;
+      result.action_request = BallActionRequest::kPickup;
       result.command = {};
       last_command_ = {};
     }
@@ -304,35 +376,87 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
   case BallMode::kPickupBall:
     result.active = true;
     result.reached_pickup_pose = true;
+    result.action_request = BallActionRequest::kPickup;
     result.command = {};
     last_command_ = {};
-    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.pickup_placeholder_duration_sec)) {
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0, config_.pickup_placeholder_duration_sec))) {
       mode_ = BallMode::kVerifyPickup;
       state_enter_sec_ = now_sec;
+      ClearTrackingState(false);
       result.mode = mode_;
+      result.tracked = {};
+      result.action_request = BallActionRequest::kVerifyPickup;
     }
     return result;
   case BallMode::kVerifyPickup:
-    // 향후 손/팔 상태와 탑뷰 재검출 결과로 실제 집기 성공 여부를 확인한다.
-    // 현재는 정지한 채 임시 시간만 지난 뒤 다음 단계로 넘긴다.
+    result.active = true;
+    result.reached_pickup_pose = true;
+    result.action_request = BallActionRequest::kVerifyPickup;
+    result.command = {};
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0,
+                      config_.pickup_verification_placeholder_sec))) {
+      // 검증 동작 전의 공 관측은 성공/실패 판정에 포함하지 않는다.
+      mode_ = BallMode::kVerifyPickupObservation;
+      state_enter_sec_ = now_sec;
+      ClearTrackingState(false);
+      result.mode = mode_;
+      result.action_request = BallActionRequest::kNone;
+      result.tracked = {};
+    }
+    return result;
+  case BallMode::kVerifyPickupObservation:
     result.active = true;
     result.reached_pickup_pose = true;
     result.command = {};
-    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.pickup_verification_placeholder_sec)) {
+    if (lost_count_ >=
+        std::max(1, config_.pickup_success_missing_frames)) {
+      has_ball_ = true;
+      pickup_failed_ = false;
       mode_ = BallMode::kStandUpAfterPickup;
       state_enter_sec_ = now_sec;
       result.mode = mode_;
+      result.has_ball = true;
+      result.pickup_failed = false;
+      result.action_request = BallActionRequest::kStandUp;
+    } else if (smoothed_.stable && smoothed_.visible) {
+      if (pickup_attempt_count_ < std::max(1, config_.pickup_max_attempts)) {
+        ++pickup_attempt_count_;
+        mode_ = BallMode::kPickupBall;
+        state_enter_sec_ = now_sec;
+        ClearTrackingState(false);
+        result.mode = mode_;
+        result.pickup_attempt_count = pickup_attempt_count_;
+        result.action_request = BallActionRequest::kPickup;
+        result.tracked = {};
+      } else {
+        has_ball_ = false;
+        pickup_failed_ = true;
+        mode_ = BallMode::kStandUpAfterPickup;
+        state_enter_sec_ = now_sec;
+        result.mode = mode_;
+        result.has_ball = false;
+        result.pickup_failed = true;
+        result.action_request = BallActionRequest::kStandUp;
+      }
     }
     return result;
   case BallMode::kStandUpAfterPickup:
     // 향후 일어나기 모션 완료 피드백을 기다리는 상태다.
     result.active = true;
+    result.action_request = BallActionRequest::kStandUp;
     result.command = {};
-    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.stand_up_placeholder_sec)) {
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0, config_.stand_up_placeholder_sec))) {
       mode_ = BallMode::kReturnCameraToLine;
+      post_pickup_return_ = true;
       state_enter_sec_ = now_sec;
       ClearTrackingState();
       result.mode = mode_;
@@ -346,17 +470,59 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
     result.command = {};
     if (camera_feedback.actual_mode == CameraMode::kForward &&
         camera_feedback.settled) {
-      // 공 무시 시간은 점선 추종 재개 후의 시간을 뜻하므로, 카메라가 실제로 정면에
-      // 복귀하고 안정화된 뒤부터 측정한다.
+      if (!post_pickup_return_) {
+        ignore_ball_until_sec_ =
+            now_sec + std::max(0.0, config_.ball_ignore_duration_sec);
+        ResetToLineFollow(false, false);
+        result = {};
+        result.mode = mode_;
+        result.has_ball = has_ball_;
+        result.pickup_failed = pickup_failed_;
+        result.pickup_attempt_count = pickup_attempt_count_;
+        return result;
+      }
+      mode_ = BallMode::kPostPickupBackAway;
+      state_enter_sec_ = now_sec;
+      ClearTrackingState(false);
+      result = {};
+      result.active = true;
+      result.mode = mode_;
+      result.has_ball = has_ball_;
+      result.pickup_failed = pickup_failed_;
+      result.pickup_attempt_count = pickup_attempt_count_;
+      result.command = {std::min(0.0, config_.post_pickup_back_away_vx),
+                        0.0, 0.0};
+    }
+    return result;
+  case BallMode::kPostPickupBackAway:
+    result.active = true;
+    result.command = {std::min(0.0, config_.post_pickup_back_away_vx),
+                      0.0, 0.0};
+    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
+        std::max(0.0, config_.post_pickup_back_away_sec)) {
+      mode_ = BallMode::kPostPickupLineRecovery;
+      state_enter_sec_ = now_sec;
+      result.mode = mode_;
+      result.active = false;
+      result.command = {};
+    }
+    return result;
+  case BallMode::kPostPickupLineRecovery:
+    // selector가 line controller의 복구 명령을 사용한다. 정상 라인 기준속도가
+    // 확인된 뒤에만 공 미션을 완전히 끈다.
+    result.active = false;
+    result.command = {};
+    if (line_reference_valid) {
       ignore_ball_until_sec_ =
           now_sec + std::max(0.0, config_.ball_ignore_duration_sec);
       mode_ = BallMode::kLineFollow;
       state_enter_sec_ = now_sec;
-      // 카메라 정면 복귀가 확인된 프레임에서 받은 정상 점선 기준속도는 보존한다.
-      // 공 추적기와 고정값들은 비운 상태로 공 무시 시간을 시작한다.
       ClearTrackingState(false);
       result = {};
-      result.mode = BallMode::kLineFollow;
+      result.mode = mode_;
+      result.has_ball = has_ball_;
+      result.pickup_failed = pickup_failed_;
+      result.pickup_attempt_count = pickup_attempt_count_;
     }
     return result;
   }
@@ -506,6 +672,54 @@ void BallController::ResetToLineFollow(bool clear_ignore,
   if (clear_ignore) ignore_ball_until_sec_ = 0.0;
 }
 
-void BallController::Reset() { ResetToLineFollow(true, true); }
+void BallController::ClearEntryEvidence() {
+  if (mode_ == BallMode::kLineFollow) ClearTrackingState(false);
+}
+
+void BallController::Reset() {
+  has_ball_ = false;
+  pickup_failed_ = false;
+  pickup_attempt_count_ = 0;
+  post_pickup_return_ = false;
+  ResetToLineFollow(true, true);
+}
 
 } // vision_core 네임스페이스
+
+/*
+ROS 통합 명령표 (ActionExecutionFeedback.enabled=true)
+형식: MODE -> command_type, mission, mission_phase, velocity, action, camera
+
+LINE_FOLLOW(0)
+  -> VELOCITY, LINE(1), 0, line controller의 vx/vy/wz, NONE, NONE
+BALL_APPROACH(1)
+  -> VELOCITY, BALL(2), 1, ComputeFarCommand(), NONE, NONE
+CAMERA_TILT_DOWN_AND_APPROACH(2)
+  -> VELOCITY, BALL(2), 2, ComputeTiltCommand(), NONE, DOWN(1)
+BALL_RL_STOPPING(10)
+  -> VELOCITY, BALL(2), 10, 0/0/0, NONE, NONE
+BALL_FINE_ADJUST(3)
+  -> ACTION, BALL(2), 3, 0/0/0, STEP_FORWARD_HALF(1), NONE
+BALL_PICKUP(4)
+  -> ACTION, BALL(2), 4, 0/0/0, PICKUP_BALL(8), NONE
+BALL_PICKUP_VERIFY(5)
+  -> ACTION, BALL(2), 5, 0/0/0, VERIFY_PICKUP(13), NONE
+BALL_PICKUP_VERIFY_OBSERVATION(13)
+  -> VELOCITY, BALL(2), 13, 0/0/0, NONE, NONE
+BALL_STAND_UP(6)
+  -> ACTION, BALL(2), 6, 0/0/0, STAND_UP(9), NONE
+CAMERA_RETURN_TO_LINE(7)
+  -> VELOCITY, BALL(2), 7, 0/0/0, NONE, FORWARD(2)
+BALL_POST_PICKUP_BACK_AWAY(11)
+  -> VELOCITY, BALL(2), 11, post_pickup_back_away_vx/0/0, NONE, NONE
+BALL_POST_PICKUP_LINE_RECOVERY(12)
+  -> VELOCITY, BALL(2), 12, 0/0/line controller의 wz, NONE, NONE
+BALL_RECOV_FORWARD(8)
+  -> VELOCITY, BALL(2), 8, ComputeRecoveryCommand(), NONE, NONE
+BALL_RECOV_DOWN(9)
+  -> VELOCITY, BALL(2), 9, ComputeRecoveryCommand(), NONE, DOWN(1)
+ACTION은 ControlCommandCoordinator가 action_id를 발급한다. ACK 전에는 ACTION을
+같은 ID로 반복하고, ACK 뒤에는 command_type=HOLD와 0/0/0을 DONE까지 유지한다.
+enabled=false인 기존 호환 호출은 ACTION 대신 controller의 시간 기반 placeholder
+속도/정지를 사용한다. 실제 최종 조합은 control_command.cpp에서 결정한다.
+*/

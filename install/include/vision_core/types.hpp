@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace vision_core {
 
 struct Point2 {
@@ -139,6 +141,109 @@ struct MotionCommand {
   double vx{0.0};
   double vy{0.0};
   double wz{0.0};
+};
+
+// 외부 실행기와 공유하는 통합 명령 분류다. 숫자값은 C/ROS 연결층에서도
+// 그대로 사용하므로 기존 값의 의미를 변경하지 않는다.
+enum class CommandType {
+  kNone = 0,
+  kVelocity = 1,
+  kAction = 2,
+  kHold = 3,
+};
+
+enum class MissionType {
+  kNone = 0,
+  kLine = 1,
+  kBall = 2,
+  kGoal = 3,
+  kHurdle = 4,
+};
+
+enum class MissionAction {
+  kNone = 0,
+  kStepForwardHalf = 1,
+  kStepForward = 2,
+  kStepBackward = 3,
+  kStepLeft = 4,
+  kStepRight = 5,
+  kTurnLeft = 6,
+  kTurnRight = 7,
+  kPickupBall = 8,
+  kStandUp = 9,
+  kHurdleContactWalk = 10,
+  kCrossHurdle = 11,
+  kShoot = 12,
+  kVerifyPickup = 13,
+  kFineAdjustHold = 14,
+  // P2P locomotion backend가 사용하는 고정 보행 코드. 기존 1~14의 값과
+  // 의미는 ROS/C API 호환을 위해 그대로 유지한다.
+  kWalkForwardTwo = 15,
+  kWalkForwardLeftTwo = 16,
+  kWalkForwardRightTwo = 17,
+  kWalkForwardSix = 18,
+  kWalkForwardLeftSix = 19,
+  kWalkForwardRightSix = 20,
+  kWalkBackwardTwo = 21,
+  kWalkLeftTwo = 22,
+  kWalkRightTwo = 23,
+  kTurnLeftInPlace = 24,
+  kTurnRightInPlace = 25,
+};
+
+// action 숫자는 하나의 ROS 토픽으로 전달하지만, 생성 원인과 DONE 처리 규칙은
+// 분리한다. Mission은 controller 상태 전이용 단발 동작이고 Locomotion은
+// 연속 속도를 양자화한 반복 가능한 보행 블록이다.
+enum class ActionCategory {
+  kNone = 0,
+  kMission = 1,
+  kLocomotion = 2,
+};
+
+enum class ControlPhase {
+  kMission = 0,
+  kRlStopping = 1,
+  kWaitingActionAck = 2,
+  kWaitingActionDone = 3,
+};
+
+enum class CameraMode {
+  kForward = 0,
+  kDown = 1,
+  kTransition = 2,
+  kGoal = 3,
+};
+
+enum class CameraRequest {
+  kNone = 0,
+  kDown = 1,
+  kForward = 2,
+  kGoal = 3,
+};
+
+struct CameraFeedback {
+  CameraMode actual_mode{CameraMode::kForward};
+  bool settled{true};
+};
+
+// enabled=false이면 기존 고정시간 placeholder를 사용한다. ROS 연결층처럼
+// enabled=true인 호출자는 DONE이 들어온 프레임에만 action_done=true로 전달한다.
+struct ActionExecutionFeedback {
+  bool enabled{false};
+  bool action_done{false};
+  bool action_active{false};
+};
+
+struct ControlCommand {
+  CommandType command_type{CommandType::kVelocity};
+  MissionType mission{MissionType::kLine};
+  int mission_phase{0};
+  ControlPhase control_phase{ControlPhase::kMission};
+  MotionCommand velocity;
+  MissionAction action{MissionAction::kNone};
+  ActionCategory action_category{ActionCategory::kNone};
+  std::uint64_t action_id{0};
+  CameraRequest camera_request{CameraRequest::kNone};
 };
 
 } // namespace vision_core

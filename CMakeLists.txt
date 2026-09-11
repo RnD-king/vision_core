@@ -16,6 +16,9 @@ add_library(shared_vision_core SHARED
   src/hurdle_controller.cpp
   src/goal_controller.cpp
   src/motion_command_selector.cpp
+  src/p2p_motion_quantizer.cpp
+  src/control_command.cpp
+  src/mission_controller.cpp
   src/c_api.cpp
 )
 add_library(shared_vision_core::shared_vision_core ALIAS shared_vision_core)
@@ -103,5 +106,38 @@ if(BUILD_TESTING)
   add_test(
     NAME shared_vision_core_line_detection_stability_test
     COMMAND shared_vision_core_line_detection_stability_test
+  )
+
+  add_executable(shared_vision_core_control_command_test
+    tests/control_command_test.cpp
+  )
+  target_link_libraries(shared_vision_core_control_command_test
+    PRIVATE shared_vision_core
+  )
+  add_test(
+    NAME shared_vision_core_control_command_test
+    COMMAND shared_vision_core_control_command_test
+  )
+
+  add_executable(shared_vision_core_p2p_motion_quantizer_test
+    tests/p2p_motion_quantizer_test.cpp
+  )
+  target_link_libraries(shared_vision_core_p2p_motion_quantizer_test
+    PRIVATE shared_vision_core
+  )
+  add_test(
+    NAME shared_vision_core_p2p_motion_quantizer_test
+    COMMAND shared_vision_core_p2p_motion_quantizer_test
+  )
+
+  add_executable(shared_vision_core_mission_controller_test
+    tests/mission_controller_test.cpp
+  )
+  target_link_libraries(shared_vision_core_mission_controller_test
+    PRIVATE shared_vision_core
+  )
+  add_test(
+    NAME shared_vision_core_mission_controller_test
+    COMMAND shared_vision_core_mission_controller_test
   )
 endif()

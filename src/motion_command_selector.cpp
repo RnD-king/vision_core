@@ -39,12 +39,32 @@ SelectedMotionCommand SelectMotionCommand(
       selected.command = line_candidate;
       selected.source = CommandSource::kLine;
     }
-  } else if (ball_result.active) {
-    selected.command = ball_result.command;
-    selected.source = CommandSource::kBall;
+  } else if (ball_result.has_ball) {
+    // 집기 성공부터 슛 완료까지는 허들로 진입하지 않는다. 공 미션의 마무리
+    // 상태가 active이면 Ball 명령을, 종료 뒤에는 Line 명령을 사용한다.
+    if (ball_result.active) {
+      selected.command = ball_result.command;
+      selected.source = CommandSource::kBall;
+    } else if (ball_result.mode == BallMode::kPostPickupLineRecovery) {
+      selected.command = line_candidate;
+      selected.command.vx = 0.0;
+      selected.command.vy = 0.0;
+      selected.source = CommandSource::kLine;
+    } else {
+      selected.command = line_candidate;
+      selected.source = CommandSource::kLine;
+    }
   } else if (hurdle_result.active) {
     selected.command = hurdle_result.command;
     selected.source = CommandSource::kHurdle;
+  } else if (ball_result.active) {
+    selected.command = ball_result.command;
+    selected.source = CommandSource::kBall;
+  } else if (ball_result.mode == BallMode::kPostPickupLineRecovery) {
+    selected.command = line_candidate;
+    selected.command.vx = 0.0;
+    selected.command.vy = 0.0;
+    selected.source = CommandSource::kLine;
   } else {
     selected.command = line_candidate;
     selected.source = CommandSource::kLine;

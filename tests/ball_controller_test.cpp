@@ -14,8 +14,10 @@ namespace {
 
 using vision_core::BallConfig;
 using vision_core::BallController;
+using vision_core::BallActionRequest;
 using vision_core::BallMode;
 using vision_core::BallResult;
+using vision_core::ActionExecutionFeedback;
 using vision_core::CameraFeedback;
 using vision_core::CameraMode;
 using vision_core::CameraRequest;
@@ -201,6 +203,8 @@ void TestBallPickupPlaceholderSequenceAndCooldown() {
   cfg.pickup_placeholder_duration_sec = 3.0;
   cfg.pickup_verification_placeholder_sec = 0.0;
   cfg.stand_up_placeholder_sec = 0.0;
+  cfg.pickup_success_missing_frames = 1;
+  cfg.post_pickup_back_away_sec = 0.0;
   cfg.ball_ignore_duration_sec = 30.0;
   BallController controller(cfg);
   auto target = Target(0.50, 0.80);
@@ -236,29 +240,147 @@ void TestBallPickupPlaceholderSequenceAndCooldown() {
   assert(result.camera_request == CameraRequest::kNone);
   assert(result.active);
 
-  result = controller.Compute(target, 100, 100, 4.32, 0.8, Down());
+  result = controller.Compute(std::nullopt, 100, 100, 4.32, 0.8, Down());
+  assert(result.mode == BallMode::kVerifyPickupObservation);
+  result = controller.Compute(std::nullopt, 100, 100, 4.34, 0.8, Down());
   assert(result.mode == BallMode::kStandUpAfterPickup);
-  result = controller.Compute(target, 100, 100, 4.34, 0.8, Down());
+  assert(result.has_ball);
+  assert(controller.HasBall());
+  result = controller.Compute(std::nullopt, 100, 100, 4.36, 0.8, Down());
   assert(result.mode == BallMode::kReturnCameraToLine);
   assert(result.camera_request == CameraRequest::kForward);
-  result = controller.Compute(target, 100, 100, 4.40, 0.8, Moving());
+  result = controller.Compute(std::nullopt, 100, 100, 4.40, 0.8, Moving());
   assert(result.mode == BallMode::kReturnCameraToLine);
-  result = controller.Compute(target, 100, 100, 4.50, 0.8, Forward());
+  result = controller.Compute(std::nullopt, 100, 100, 4.50, 0.8, false,
+                              Forward());
+  assert(result.mode == BallMode::kPostPickupBackAway);
+  assert(result.command.vx < 0.0);
+  result = controller.Compute(std::nullopt, 100, 100, 4.52, 0.8, false,
+                              Forward());
+  assert(result.mode == BallMode::kPostPickupLineRecovery);
+  assert(!result.active);
+  result = controller.Compute(std::nullopt, 100, 100, 4.54, 0.8, true,
+                              Forward());
   assert(result.mode == BallMode::kLineFollow);
   assert(result.camera_request == CameraRequest::kNone);
   assert(!result.active);
+  assert(result.has_ball);
 
-  // The same visible ball is ignored for the full cooldown.
+  // 슛 완료에 해당하는 외부 상태 갱신 뒤에도 cooldown 동안 같은 공은 무시한다.
+  controller.SetHasBall(false);
   result = controller.Compute(
-      target, 100, 100, 34.49, 0.6, true, Forward());
+      target, 100, 100, 34.53, 0.6, true, Forward());
   assert(result.mode == BallMode::kLineFollow);
   assert(!result.active);
   // At expiry, tracking starts fresh and can enter again with a 1-frame test
   // stability window.
   result = controller.Compute(
-      target, 100, 100, 34.50, 0.12, false, Forward());
+      target, 100, 100, 34.54, 0.12, false, Forward());
   assert(result.mode == BallMode::kTiltCameraDownAndApproach);
   ExpectNear(result.command.vx, 0.30);
+}
+
+void TestFeedbackSequenceKeepsVerifyPickupInActionMode() {
+  BallConfig cfg;
+  cfg.upper_acquire_v_norm = 1.01;
+  cfg.stable_window = 1;
+  cfg.stable_min_hits = 1;
+  cfg.tilt_down_window = 1;
+  cfg.tilt_down_min_hits = 1;
+  cfg.rl_stop_duration_sec = 0.5;
+  cfg.pickup_success_missing_frames = 1;
+  cfg.post_pickup_back_away_sec = 0.0;
+  cfg.ball_ignore_duration_sec = 0.0;
+  BallController controller(cfg);
+  const auto target = Target(0.50, 0.80);
+  const ActionExecutionFeedback waiting{true, false, false};
+  const ActionExecutionFeedback done{true, true, false};
+
+  auto result = controller.Compute(
+      target, 100, 100, 0.0, 0.8, true, Forward(), waiting);
+  assert(result.mode == BallMode::kTiltCameraDownAndApproach);
+  assert(result.command.vx > 0.0);
+
+  result = controller.Compute(
+      target, 100, 100, 0.1, 0.8, true, Down(), waiting);
+  assert(result.mode == BallMode::kRlStoppingForPickup);
+  ExpectNear(result.command.vx, 0.0);
+
+  result = controller.Compute(
+      target, 100, 100, 0.6, 0.8, true, Down(), waiting);
+  assert(result.mode == BallMode::kFineAdjustForPickup);
+  assert(result.action_request == BallActionRequest::kFineAdjustForward);
+
+  result = controller.Compute(
+      target, 100, 100, 0.7, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kPickupBall);
+  assert(result.action_request == BallActionRequest::kPickup);
+
+  result = controller.Compute(
+      target, 100, 100, 0.8, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kVerifyPickup);
+  assert(result.action_request == BallActionRequest::kVerifyPickup);
+
+  result = controller.Compute(
+      target, 100, 100, 0.9, 0.8, true, Down(), waiting);
+  assert(result.mode == BallMode::kVerifyPickup);
+  assert(result.action_request == BallActionRequest::kVerifyPickup);
+
+  result = controller.Compute(
+      target, 100, 100, 1.0, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kVerifyPickupObservation);
+  assert(result.action_request == BallActionRequest::kNone);
+
+  // 공이 계속 보이면 최대 3회까지 PICKUP을 다시 요청한다.
+  result = controller.Compute(
+      target, 100, 100, 1.1, 0.8, true, Down(), waiting);
+  assert(result.mode == BallMode::kPickupBall);
+  assert(result.pickup_attempt_count == 2);
+  result = controller.Compute(
+      target, 100, 100, 1.2, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kVerifyPickup);
+  result = controller.Compute(
+      target, 100, 100, 1.3, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kVerifyPickupObservation);
+  result = controller.Compute(
+      target, 100, 100, 1.4, 0.8, true, Down(), waiting);
+  assert(result.mode == BallMode::kPickupBall);
+  assert(result.pickup_attempt_count == 3);
+  result = controller.Compute(
+      target, 100, 100, 1.5, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kVerifyPickup);
+  result = controller.Compute(
+      target, 100, 100, 1.6, 0.8, true, Down(), done);
+  assert(result.mode == BallMode::kVerifyPickupObservation);
+  result = controller.Compute(
+      target, 100, 100, 1.7, 0.8, true, Down(), waiting);
+  assert(result.mode == BallMode::kStandUpAfterPickup);
+  assert(result.action_request == BallActionRequest::kStandUp);
+  assert(!result.has_ball);
+  assert(result.pickup_failed);
+  assert(controller.PickupFailed());
+  assert(controller.PickupAttemptCount() == 3);
+
+  result = controller.Compute(
+      std::nullopt, 100, 100, 1.8, 0.8, false, Down(), done);
+  assert(result.mode == BallMode::kReturnCameraToLine);
+  result = controller.Compute(
+      std::nullopt, 100, 100, 1.9, 0.8, false, Forward(), waiting);
+  assert(result.mode == BallMode::kPostPickupBackAway);
+  result = controller.Compute(
+      std::nullopt, 100, 100, 2.0, 0.8, false, Forward(), waiting);
+  assert(result.mode == BallMode::kPostPickupLineRecovery);
+  result = controller.Compute(
+      std::nullopt, 100, 100, 2.1, 0.8, true, Forward(), waiting);
+  assert(result.mode == BallMode::kLineFollow);
+  assert(result.pickup_failed);
+
+  // 다음 공이 안정 검출되어 새 Ball 미션이 시작되면 이전 실패 플래그를 지운다.
+  result = controller.Compute(
+      target, 100, 100, 2.2, 0.8, true, Forward(), waiting);
+  assert(result.mode == BallMode::kTiltCameraDownAndApproach);
+  assert(!result.pickup_failed);
+  assert(!controller.PickupFailed());
 }
 
 void TestCameraTimeoutAndLegacyTimedFeedback() {
@@ -468,6 +590,11 @@ void TestMissionSelectorPriority() {
   ball.mode = BallMode::kApproachBall;
   ball.command = {0.2, 0.0, -0.1};
   selected = vision_core::SelectMotionCommand(ball, hurdle, goal, line);
+  assert(selected.source == vision_core::CommandSource::kHurdle);
+  ExpectNear(selected.command.vx, 0.3);
+
+  ball.has_ball = true;
+  selected = vision_core::SelectMotionCommand(ball, hurdle, goal, line);
   assert(selected.source == vision_core::CommandSource::kBall);
   ExpectNear(selected.command.vx, 0.2);
 
@@ -483,6 +610,16 @@ void TestMissionSelectorPriority() {
   selected = vision_core::SelectMotionCommand(ball, hurdle, goal, line);
   assert(selected.source == vision_core::CommandSource::kLine);
   ExpectNear(selected.command.vx, 0.7);
+
+  // 공 집기 후 라인 재획득 중에는 hurdle보다 line 복구 명령을 우선한다.
+  goal = {};
+  ball.active = false;
+  ball.has_ball = true;
+  ball.mode = BallMode::kPostPickupLineRecovery;
+  selected = vision_core::SelectMotionCommand(ball, hurdle, goal, line);
+  assert(selected.source == vision_core::CommandSource::kLine);
+  ExpectNear(selected.command.vx, 0.0);
+  ExpectNear(selected.command.wz, -0.2);
 }
 
 void TestCApiV2V3LayoutAndPrecomputedSelector() {
@@ -564,6 +701,7 @@ int main() {
   TestRecoveryAloneIsNotAForwardReference();
   TestDefaultStableFramesCountTowardTiltAndRawScreenWins();
   TestBallPickupPlaceholderSequenceAndCooldown();
+  TestFeedbackSequenceKeepsVerifyPickupInActionMode();
   TestCameraTimeoutAndLegacyTimedFeedback();
   TestLostFrameLimitIsExact();
   TestMovingCameraDropsDetectionsAndDownRecoveryStaysDown();

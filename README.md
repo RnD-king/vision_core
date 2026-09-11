@@ -17,8 +17,10 @@
 - CUDA 전처리와 TensorRT YOLO 추론
 - YOLO 검출 결과를 공통 코어 자료형으로 변환
 - 화면 표시와 진단 로그
-- 코어가 선택한 최종 속도를 ROS2 `Twist`로 변환
-- `/g1_vision/cmd_vel` 토픽 발행
+- 코어가 선택한 통합 명령을 속도·액션·카메라 ROS2 명령으로 분배
+- `/g1_vision/cmd_vel`, `/g1_vision/action_cmd`,
+  `/g1_vision/camera_cmd` 토픽 발행
+- 액션·카메라 명령의 `ACK`/`DONE` 상태 토픽 수신
 
 ### 공통 `vision_core`
 
@@ -31,7 +33,8 @@
 - 공·골대·백보드·허들 중 사용할 검출 대상 선택
 - 공·허들·골대 검출 안정화와 접근 상태 전환
 - 공·허들·골대 접근 속도 및 임시 동작 요청 계산
-- 골대 > 공 > 허들 > 점선 우선순위로 최종 명령 선택
+- Line 상태에서 골대 > 허들 > 공 순서로 새 미션을 선택하고, 진입한 미션은
+  해당 controller의 성공·유실 종료 전까지 중앙 코디네이터에서 잠금
 
 ### G1 시뮬레이터
 
@@ -59,13 +62,51 @@ G1은 Python `ctypes` 연결층을 통해 같은
     ↓
 [vision_core] IMU 기반 카메라 좌표 보정
     ↓
-[vision_core] 라인 8차원 특징 계산
+[vision_core] MissionController::Step 한 번 호출
+    ├─ LINE: 라인 특징/명령 + 허들·공·골대 진입 판정
+    ├─ BALL: BallController만 실행
+    ├─ HURDLE: HurdleController만 실행
+    └─ GOAL: GoalController만 실행
     ↓
-[vision_core] 라인 추종 명령 계산
-[vision_core] 미션 물체 접근 명령 계산
+[vision_core] 미션 잠금과 속도/액션/카메라를 하나의 ControlCommand로 조정
     ↓
-[vision] 객체별 우선순위 따라 선택된 vx, vy, wz를 토픽으로 발행
+[vision] 속도는 매 프레임, 액션/카메라는 ACK 전까지 해당 토픽으로 발행
 ```
+
+## 통합 명령과 ROS2 전달 규칙
+
+코어 내부의 `ControlCommand`는 `command_type`, `mission`, `mission_phase`,
+`control_phase`, `vx/vy/wz`, `action`, `action_id`, `camera_request`를 한 번에
+보관한다. ROS2 `vision` 패키지는 이를 실행 특성에 따라 다음처럼 분배한다.
+
+```text
+/g1_vision/cmd_vel        geometry_msgs/Twist       매 추론 프레임 발행
+/g1_vision/action_cmd     vision/ActionCommand      ACK 전까지 동일 ID 재발행
+/g1_vision/action_status  vision/CommandStatus      ACK/DONE 수신
+/g1_vision/camera_cmd     vision/CameraCommand      ACK 전까지 동일 ID 재발행
+/g1_vision/camera_status  vision/CommandStatus      ACK/DONE 수신
+```
+
+액션 실행 중에는 속도 토픽에 `0,0,0`을 계속 발행한다. 접근 보행에서 액션으로
+바뀔 때는 즉시 자세 제어권을 넘기지 않고 `RL_STOPPING` 동안
+`command_type=VELOCITY`, `vx=vy=wz=0`을 유지한다. 기본 정지 시간은 1.5초이며
+ROS 파라미터 `rl_stop_duration_sec`로 바꾼다. 이후 ACTION을 같은 `action_id`로
+ACK까지 반복하고, ACK 뒤에는 DONE까지 HOLD한다. DONE을 받은 다음 프레임부터
+해당 미션 controller가 다음 판단을 이어간다.
+
+기존 C++/C API 호출자는 호환을 위해 설정 시간 기반 placeholder를 계속 사용한다.
+실제 ACK/DONE 경로는 `ActionExecutionFeedback.enabled=true`를 전달하는 ROS2
+연결에서만 활성화된다.
+
+`MissionController`가 전체 미션의 단일 진입점이다. ROS 노드는 각 객체
+controller를 직접 호출하거나 `StartAfterPickup()`, `Reset()`, 우선순위 판단을
+수행하지 않는다. 보정된 line 중심점, 객체 target, 카메라 상태와 ACK/DONE만
+전달하고 반환된 `ControlCommand`를 토픽으로 변환한다.
+
+LINE에서는 라인 명령을 계속 계산하면서 진입 안정화만 수행한다. 물체 미션이
+선택되면 해당 controller만 실행하며 다른 controller의 검출 이력과 후보 명령은
+계산하지 않는다. Ball의 `POST_PICKUP_LINE_RECOVERY`와 Goal의
+`HEADING_RECOVERY`처럼 라인이 필요한 단계에서만 line 특징과 명령을 다시 계산한다.
 
 ## `line_detection_adapter`가 라인에만 있는 이유
 
@@ -98,6 +139,8 @@ vision_core/
 │   ├── hurdle_controller.hpp
 │   ├── goal_controller.hpp
 │   ├── motion_command_selector.hpp
+│   ├── p2p_motion_quantizer.hpp
+│   ├── mission_controller.hpp
 │   └── c_api.h
 ├── src/
 │   ├── coordinate_rectifier.cpp
@@ -108,6 +151,8 @@ vision_core/
 │   ├── hurdle_controller.cpp
 │   ├── goal_controller.cpp
 │   ├── motion_command_selector.cpp
+│   ├── p2p_motion_quantizer.cpp
+│   ├── mission_controller.cpp
 │   └── c_api.cpp
 └── CMakeLists.txt
 ```
@@ -120,8 +165,52 @@ vision_core/
 - `ball_controller`: 공 검출 안정화, 원거리 접근, 카메라 하향, 임시 정지 시퀀스
 - `hurdle_controller`: 허들 접근, 하향 감속, 잔발/넘기 placeholder 시퀀스
 - `goal_controller`: 집기 후 대기, 골대 탐색/접근, 미세조정/슛 placeholder 시퀀스
-- `motion_command_selector`: 골대·공·허들·점선 후보 중 최종 명령 선택
+- `p2p_motion_quantizer`: 연속 `vx/vy/wz`를 고정 보행 primitive로 변환
+- `mission_controller`: 활성 미션 진입·잠금·이탈 및 필요한 controller만 실행
+- `control_command`: 활성 미션 결과의 ACTION ID와 ACK/DONE 생명주기 관리
+- `motion_command_selector`: 기존 C++/C API 호출자용 stateless 호환 선택기
 - `c_api`: G1 Python에서 C++ 코어를 호출하기 위한 연결 인터페이스
+
+## 선택형 보행 backend
+
+`ControlCommandConfig::locomotion_backend`의 기본값은 기존과 같은
+`kVelocity`다. 따라서 설정하지 않은 기존 C++/C/ROS 호출자는 계속
+`vx/vy/wz`를 받고 동작이 바뀌지 않는다.
+
+`kP2pAction`을 선택하면 각 controller와 MissionController의 속도 계산은 그대로
+두고, 최종 선택된 `MotionCommand`만 `P2pMotionQuantizer`를 통과한다.
+
+```text
+controller의 mission action_request 존재
+    -> ActionCategory::kMission (항상 우선)
+그 외의 최종 vx/vy/wz
+    -> kVelocity backend: VELOCITY
+    -> kP2pAction backend: ActionCategory::kLocomotion
+```
+
+기본 P2P primitive는 2/6걸음 직진, 2/6걸음 좌·우 곡선 전진, 2걸음
+후진/횡이동, 좌·우 제자리 회전이다. 현재 임계값은 초기 구조값이며 실제 P2P
+모션 이동량에 맞춰 `P2pMotionConfig`에서 조정한다. 유한하지 않은 속도나 모든
+축이 deadband 안인 명령은 새 액션을 만들지 않고 HOLD한다.
+
+Mission 액션과 Locomotion 액션은 한 실행기에서 직렬 실행되지만 생명주기는
+분리된다. Mission 액션은 DONE 뒤 controller가 요청을 해제할 때까지 같은 액션을
+억제한다. Locomotion 액션은 한 블록의 DONE 뒤 최신 영상으로 다시 계산하며,
+같은 primitive가 필요하면 새 `action_id`로 즉시 반복할 수 있다. 이미 ACK된
+동작은 중간에 교체하지 않으며 pending 동작의 DONE 뒤 Mission 요청을 우선한다.
+
+`ControlCommand.action_category`는 송신부 내부의 피드백 라우팅 정보다. ROS
+메시지에 category를 추가하지 않고, 외부 실행 코드는 서로 겹치지 않는 `action`
+코드와 `action_id`로 동작을 식별한다. P2P action 코드 15~25는 ROS
+`ActionCommand.msg`에도 같은 값으로 정의돼 있다. ROS에서
+`locomotion_backend:=p2p`를 선택하면 `/cmd_vel`을 발행하지 않고 보행과 미션을
+모두 `/g1_vision/action_cmd`로 보낸다. 기본값 `velocity`에서는 기존 동작을
+그대로 유지한다.
+
+```bash
+ros2 run vision line_perception_node --ros-args \
+  -p locomotion_backend:=p2p
+```
 
 ## 현재 공 접근 임시 시퀀스
 
@@ -132,12 +221,17 @@ vision_core/
 LINE_FOLLOW
   -> BALL_APPROACH
   -> CAMERA_TILT_DOWN_AND_APPROACH
-  -> BALL_FINE_ADJUST (현재 1초 저속 직진 placeholder)
+  -> BALL_FINE_ADJUST (현재 1.5초 저속 직진 placeholder)
   -> BALL_PICKUP (현재 3초 정지 placeholder)
-  -> BALL_PICKUP_VERIFY (향후 실제 집기 확인)
-  -> BALL_STAND_UP (향후 일어나기 모션)
+  -> BALL_PICKUP_VERIFY
+  -> BALL_PICKUP_VERIFY_OBSERVATION
+       공 미검출: has_ball=true
+       공 안정 검출: BALL_PICKUP 재시도(최대 3회)
+  -> BALL_STAND_UP
   -> CAMERA_RETURN_TO_LINE
-  -> LINE_FOLLOW (공 검출 30초 무시)
+  -> BALL_POST_PICKUP_BACK_AWAY
+  -> BALL_POST_PICKUP_LINE_RECOVERY (line wz로 제자리 회전)
+  -> LINE_FOLLOW
 ```
 
 - line 후보명령은 ball 활성 여부와 관계없이 별도로 계산·보관한다.
@@ -146,27 +240,37 @@ LINE_FOLLOW
   가장 최근의 유효한 양수 line `vx`를 `BALL_APPROACH` 전이에 한 번
   고정한다. 원거리 접근 `vx`는 `고정한 line_vx * far_speed_scale`이며 이후
   백그라운드 line controller의 복구속도와 무관하다.
-- 공의 raw 화면 중심이 영상 높이의 75% 아래인 판정이 최근 10프레임 중
-  7프레임 이상일 때 카메라 하향 상태로 들어간다. 조건을 벗어난 프레임이나
+- 공의 raw 화면 중심이 영상 높이의 65% 아래인 판정이 최근 10프레임 중
+  6프레임 이상일 때 카메라 하향 상태로 들어간다. 조건을 벗어난 프레임이나
   공을 놓친 프레임은 실패 프레임으로 기록하되 누적 판정을 즉시 초기화하지 않는다.
 - 공 자체의 최초 안정 검출도 최근 10프레임 중 7프레임을 사용한다.
 - 카메라 전환 중에는 직전 접근속도를 축소한 값으로 직진하고 `wz=0`을 쓴다.
 - feedback API에서는 카메라가 실제 DOWN+settled를 보고한 뒤에만 탑뷰
-  `BALL_FINE_ADJUST`를 시작한다. 현재는 실제 미세보행 대신 1초 저속 직진을 쓰며,
+  `BALL_FINE_ADJUST`를 시작한다. 현재는 실제 미세보행 대신 1.5초 저속 직진을 쓰며,
   기존 API는 호환을 위해 설정된 시간으로 카메라 도달을 추정한다.
-- 30초 무시 시간은 전방 카메라가 실제로 복귀·안정화되어 line 추종이 다시
-  시작되는 순간부터 센다. 공 tracker만 무시하며 정상 line 기준속도는 다음 공을
-  위해 계속 갱신한다.
+- `has_ball=true`인 동안에는 새 Ball 미션을 시작하지 않는다. 공 보유 상태가
+  해제된 경우에도 Ball 미션 종료 시점부터 기본 10초 동안 공 tracker를 무시한다.
 - G1의 90° 가상 카메라는 몸통 roll/pitch를 점진적으로 상쇄하여 endpoint의
   광축을 월드 바닥 수직(-Z)에 맞춘다.
-- `BALL_PICKUP_VERIFY`와 `BALL_STAND_UP`은 현재 0초 placeholder라 각 한 프레임씩
-  상태를 표시한 뒤 넘어간다. 이후 실제 집기 확인/일어나기 완료 피드백으로 바꾼다.
-- RealSense depth 교차검증, 시뮬레이터 거리 노이즈, 실제 pickup, pickup 후
-  전용 line 재진입은 의도적으로 이번 구현 범위에서 제외했다.
+- `VERIFY_PICKUP` 완료 뒤 공이 기본 5프레임 연속 미검출되면 집기 성공으로
+  판정한다. 공이 최근 10프레임 중 7회 안정 검출되면 실패로 보고 최대 3회까지
+  `PICKUP_BALL`을 다시 요청한다.
+- 일어나기와 카메라 정면 복귀 뒤 기본 `vx=-0.10`으로 1초 후진한다. 이후
+  line controller의 `wz`만 사용해 제자리 회전하고 `line_reference_valid=true`에서
+  Ball mode를 종료한다.
 
 G1 Python은 기존 `VisionBallResult`와 기존 함수 ABI를 바꾸지 않고 새
-`vision_ball_controller_compute_v3()`로 line 속도, 정상 TRACK 기준값 여부,
-실제 카메라 상태를 전달한다. v2도 호환을 위해 남아 있다.
+`vision_ball_controller_compute_v4()`로 line 속도, 정상 TRACK 기준값 여부,
+실제 카메라 상태와 ACTION 피드백을 전달한다. 공 보유 여부와 시도 횟수는 별도
+getter로 읽어 기존 결과 구조체 ABI를 유지한다.
+통합 선택/명령 C API는 `vision_select_mission_command_v2()`와
+`vision_control_command_compute_v2()`에 `ball_has_ball`을 전달해야 공 보유 중
+허들 억제까지 적용된다.
+매 프레임 Ball 계산 뒤 `goal_controller.UpdateBallState(ball_result)`를 호출하고,
+Goal 계산 뒤 `ball_controller.SetHasBall(goal_controller.HasBall())`로 되돌려 쓰면
+슛 완료 시 두 controller의 공 보유 상태가 함께 false가 된다. C API도 각각
+`vision_goal_controller_update_ball_state()`와
+`vision_ball_controller_set_has_ball()`을 같은 순서로 호출한다.
 
 C++의 `camera_request`는 `NONE`, `DOWN`, `FORWARD`, `GOAL` 네 상태다. 평소와
 카메라 자세 유지 중에는 `NONE`이고, 자세를 바꿀 때만 목표 자세 요청을
@@ -179,16 +283,25 @@ C++의 `camera_request`는 `NONE`, `DOWN`, `FORWARD`, `GOAL` 네 상태다. 평�
 ```text
 LINE_FOLLOW
   -> HURDLE_APPROACH
+  -> HURDLE_RECOV_FORWARD (접근 중 미검출 시, 저속 전진하며 재검출 대기)
+  -> HURDLE_FAILED (복구 진입 뒤 5초 동안 재검출하지 못하면 정지)
   -> HURDLE_CAMERA_TILT_DOWN_AND_SLOW
+  -> HURDLE_RECOV_DOWN (하향 시야에서 미검출 시, 저속 전진하며 재검출 대기)
   -> HURDLE_CONTACT_WALK (현재 2초 저속 직진 placeholder)
   -> HURDLE_CROSS (현재 3초 정지 placeholder)
   -> HURDLE_CAMERA_RETURN_TO_LINE
   -> LINE_FOLLOW
 ```
 
-- bbox 아래쪽이 영상 높이의 82%를 넘는 판정이 최근 10프레임 중 7프레임이면
-  카메라 하향/감속 단계로 들어간다.
-- 허들 자체의 최초 안정 검출도 최근 10프레임 중 7프레임을 사용한다.
+- 최초 진입은 허들 중심이 원본 영상 높이의 60% 이상 내려온 프레임이 최근
+  30프레임 중 20프레임 이상이고 현재도 보일 때만 허용한다.
+- 진입 뒤 허들 중심이 영상 높이의 75% 아래인 판정이 최근 10프레임 중
+  7프레임이면 카메라 하향/감속 단계로 들어간다.
+- 카메라 전환 중 관측은 안정화/손실 이력에서 제외한다. 접근 중 5프레임 연속
+  미검출되면 복구로 들어가고, 3프레임 연속 재검출하면 접근으로 복귀한다.
+  복구 중에는 `vx=0.10`으로 저속 전진하며 마지막 검출 방향으로 보정하고,
+  5초 동안 재검출하지 못하면 `HURDLE_FAILED`에서 정지한다. 실패 상태도
+  Hurdle 미션을 계속 잠그며 명시적인 `Reset()` 전까지 Line/Ball로 이탈하지 않는다.
 - `action_request=CONTACT_WALK/CROSS`는 이후 G1 모션 패키지가 실행할 동작 종류다.
 - 실제 완료 피드백이 연결되기 전에는 각각 설정된 placeholder 시간으로 넘어간다.
 
@@ -196,7 +309,8 @@ LINE_FOLLOW
 
 ```text
 StartAfterPickup
-  -> GOAL_POST_PICKUP_WAIT (2초)
+  -> LINE_FOLLOW (공 보유 상태로 골대 안정 검출 대기)
+  -> GOAL_POST_PICKUP_WAIT
   -> CAMERA_TILT_TO_GOAL_VIEW
   -> GOAL_SEARCH
   -> GOAL_APPROACH
@@ -207,7 +321,14 @@ StartAfterPickup
   -> LINE_FOLLOW
 ```
 
-- 실제 집기 확인 뒤 `StartAfterPickup()`을 한 번 호출해야 골대 미션이 시작된다.
+- `BallResult.has_ball=true`이고 Ball mode가 `LINE_FOLLOW`까지 끝난 뒤의 골대
+  검출만 진입 판정에 사용한다. C++은 `UpdateBallState()`, C API는
+  `vision_goal_controller_update_ball_state()`로 두 controller 상태를 연결한다.
+- `StartAfterPickup()`은 호환용으로 공 보유/골대 진입 대기 상태만 켜며, 골대가
+  안정 검출되기 전에는 Line 명령을 덮어쓰지 않는다.
+- 공을 3회 모두 집지 못하면 `pickup_failed=true`, `has_ball=false`이므로 골대는
+  무시한다. 이후 새 공이 안정 검출되어 Ball 미션이 다시 시작되면 이전 실패
+  플래그와 시도 횟수를 초기화한다.
 - 골대 최초 검출과 미세조정 진입은 각각 최근 10프레임 중 7프레임을 사용한다.
 - `GOAL_VIEW`는 골대를 보는 수평 시야, `FORWARD`는 기존 라인용 평소 시야다.
 - 카메라가 평소각에 도달하면 골대 제어는 속도를 덮어쓰지 않고 line controller의
@@ -224,11 +345,10 @@ C++ 공개 class/struct가 바뀌었으므로 C++ 소비자는 코어 설치 후
 빌드해야 한다. 이미 line 후보를 계산한 C 호출자는 상태를 두 번 갱신하지 않도록
 선택만 수행하는 `vision_select_motion_command_v2()`를 사용한다.
 
-ROS2 `line_perception_node`는 실제 카메라 actuator 요청/도달 feedback 토픽이
-아직 없으므로 `enable_ball_controller=false`가 기본이다. 이를 수동으로 켜면
-시간 추정 compatibility 경로로 알고리즘 화면 확인은 가능하지만 실제 로봇용
-카메라 동작 연결로 간주하면 안 된다. 실제 endpoint feedback을 쓰는 현재 소비자는
-G1 Python bridge다.
+ROS2 `line_perception_node`는 액션과 카메라 명령 및 ACK/DONE 토픽을 제공한다.
+실제 모션·카메라 실행기는 명령 ID를 그대로 되돌려야 하며, 같은 ID의 명령을
+중복 실행하면 안 된다. 실행기 없이 알고리즘 화면만 확인할 때는
+`enable_command_transport=false`, `simulate_camera_feedback=true`를 사용한다.
 
 ## 코어 빌드와 설치
 
@@ -393,7 +513,7 @@ source install/setup.bash
 - 공 접근 상태와 속도 수식: `src/ball_controller.cpp`
 - 허들 접근 상태와 임시 동작: `src/hurdle_controller.cpp`
 - 골대 접근 상태와 임시 동작: `src/goal_controller.cpp`
-- 골대·공·허들·점선 최종 우선순위: `src/motion_command_selector.cpp`
+- 골대·공·허들·점선 최종 미션 잠금: `src/control_command.cpp`
 - G1에 새 기능 공개: `include/vision_core/c_api.h`, `src/c_api.cpp`
 - 카메라·IMU 토픽과 YOLO 추론: `/home/noh/my_cv/src/vision`
 
@@ -402,7 +522,7 @@ source install/setup.bash
 
 ## 마무리 전 주의사항
 
-- 특징·좌표 보정·점선 제어·공 제어·최종 명령 우선순위의 기준 코드는
+- 특징·좌표 보정·점선 제어·공 제어·최종 명령 잠금의 기준 코드는
   `vision_core`다. 같은 계산을 `vision`과 G1에 각각 복사하지 않는다.
 - 코어 헤더, C API 또는 `CMakeLists.txt`까지 변경했다면
   `vision_core` 빌드·설치 후 `vision`도 `colcon build`한다.

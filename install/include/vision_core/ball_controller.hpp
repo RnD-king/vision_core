@@ -11,6 +11,9 @@ enum class BallMode {
   kLineFollow = 0,
   kApproachBall = 1,
   kTiltCameraDownAndApproach = 2,
+  // 실행 순서는 TILT_DOWN -> RL_STOPPING -> FINE_ADJUST다. 기존 외부 연결에서
+  // 사용하는 mode 숫자를 바꾸지 않기 위해 RL_STOPPING의 값은 10을 유지한다.
+  kRlStoppingForPickup = 10,
   kFineAdjustForPickup = 3,
   kPickupBall = 4,
   kVerifyPickup = 5,
@@ -18,28 +21,19 @@ enum class BallMode {
   kReturnCameraToLine = 7,
   kBallRecoveryForward = 8,
   kBallRecoveryDown = 9,
+  // 집기 시퀀스가 끝난 뒤 RL 속도 제어로 후진하고, line controller가
+  // 라인을 다시 잡을 때까지 그 복구 명령을 사용하는 상태다.
+  kPostPickupBackAway = 11,
+  kPostPickupLineRecovery = 12,
+  kVerifyPickupObservation = 13,
 };
 
-enum class CameraMode {
-  kForward = 0,
-  kDown = 1,
-  kTransition = 2,
-  kGoal = 3,
-};
-
-// 외부 카메라 구동기에 이번 프레임에 전달할 요청이다.
-// kNone은 발행하지 않고, kDown/kForward는 해당 자세의 도달 피드백이 올 때까지
-// 반복한다.
-enum class CameraRequest {
+enum class BallActionRequest {
   kNone = 0,
-  kDown,
-  kForward,
-  kGoal,
-};
-
-struct CameraFeedback {
-  CameraMode actual_mode{CameraMode::kForward};
-  bool settled{true};
+  kFineAdjustForward = 1,
+  kPickup = 2,
+  kStandUp = 3,
+  kVerifyPickup = 4,
 };
 
 struct BallConfig {
@@ -86,6 +80,14 @@ struct BallConfig {
   double pickup_placeholder_duration_sec{3.0};
   double pickup_verification_placeholder_sec{0.0};
   double stand_up_placeholder_sec{0.0};
+  int pickup_max_attempts{3};
+  // VERIFY_PICKUP 동작이 끝난 뒤 공이 이 프레임 수만큼 연속으로 보이지
+  // 않으면 손에 들어온 것으로 판단한다. 보이는 경우에는 stable_window /
+  // stable_min_hits 판정을 통과해야 재집기를 시도한다.
+  int pickup_success_missing_frames{5};
+  double post_pickup_back_away_vx{-0.10};
+  double post_pickup_back_away_sec{1.0};
+  double rl_stop_duration_sec{1.50};
   double ball_ignore_duration_sec{10.0};
   double near_target_u_norm{0.50};
   double near_target_v_norm{0.70};
@@ -119,7 +121,11 @@ struct TrackedBall {
 struct BallResult {
   bool active{false};
   bool reached_pickup_pose{false};
+  bool has_ball{false};
+  bool pickup_failed{false};
+  int pickup_attempt_count{0};
   CameraRequest camera_request{CameraRequest::kNone};
+  BallActionRequest action_request{BallActionRequest::kNone};
   BallMode mode{BallMode::kLineFollow};
   TrackedBall tracked;
   MotionCommand command;
@@ -148,7 +154,19 @@ public:
                      int image_width, int image_height, double now_sec,
                      double line_vx, bool line_reference_valid,
                      const CameraFeedback &camera_feedback);
+  BallResult Compute(const std::optional<ObjectTarget> &ball_target,
+                     int image_width, int image_height, double now_sec,
+                     double line_vx, bool line_reference_valid,
+                     const CameraFeedback &camera_feedback,
+                     const ActionExecutionFeedback &action_feedback);
   static const char *ModeName(BallMode mode);
+  bool HasBall() const { return has_ball_; }
+  void SetHasBall(bool has_ball) { has_ball_ = has_ball; }
+  bool PickupFailed() const { return pickup_failed_; }
+  int PickupAttemptCount() const { return pickup_attempt_count_; }
+  // 다른 진입 후보가 우선되는 동안 이전 Ball 진입 프레임이 남지 않게 한다.
+  // 공 보유/실패/cooldown 상태와 마지막 정상 line 기준속도는 보존한다.
+  void ClearEntryEvidence();
   void Reset();
 
 private:
@@ -184,6 +202,10 @@ private:
   double latched_far_line_vx_{0.0};
   double latched_tilt_vx_{0.0};
   double ignore_ball_until_sec_{0.0};
+  bool has_ball_{false};
+  bool pickup_failed_{false};
+  int pickup_attempt_count_{0};
+  bool post_pickup_return_{false};
 };
 
 } // namespace vision_core

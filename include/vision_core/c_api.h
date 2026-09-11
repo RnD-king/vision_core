@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -154,7 +156,19 @@ VisionBallResult vision_ball_controller_compute_v3(
     VisionBallControllerHandle handle, VisionObjectTarget ball_target,
     int image_width, int image_height, double now_sec, double line_vx,
     int line_reference_valid, int camera_actual_mode, int camera_settled);
+// V4 enables the same ACTION feedback path used by the ROS adapter.
+VisionBallResult vision_ball_controller_compute_v4(
+    VisionBallControllerHandle handle, VisionObjectTarget ball_target,
+    int image_width, int image_height, double now_sec, double line_vx,
+    int line_reference_valid, int camera_actual_mode, int camera_settled,
+    int action_feedback_enabled, int action_done, int action_active);
 void vision_ball_controller_reset(VisionBallControllerHandle handle);
+int vision_ball_controller_has_ball(VisionBallControllerHandle handle);
+int vision_ball_controller_pickup_failed(VisionBallControllerHandle handle);
+void vision_ball_controller_set_has_ball(
+    VisionBallControllerHandle handle, int has_ball);
+int vision_ball_controller_pickup_attempt_count(
+    VisionBallControllerHandle handle);
 
 typedef void *VisionHurdleControllerHandle;
 
@@ -185,6 +199,11 @@ VisionHurdleResult vision_hurdle_controller_compute_v2(
     VisionHurdleControllerHandle handle, VisionObjectTarget hurdle_target,
     int image_width, int image_height, double now_sec, double line_vx,
     int line_reference_valid, int camera_actual_mode, int camera_settled);
+VisionHurdleResult vision_hurdle_controller_compute_v3(
+    VisionHurdleControllerHandle handle, VisionObjectTarget hurdle_target,
+    int image_width, int image_height, double now_sec, double line_vx,
+    int line_reference_valid, int camera_actual_mode, int camera_settled,
+    int action_feedback_enabled, int action_done, int action_active);
 void vision_hurdle_controller_reset(VisionHurdleControllerHandle handle);
 
 typedef void *VisionGoalControllerHandle;
@@ -222,6 +241,11 @@ VisionGoalControllerHandle vision_goal_controller_create(void);
 void vision_goal_controller_destroy(VisionGoalControllerHandle handle);
 void vision_goal_controller_start_after_pickup(
     VisionGoalControllerHandle handle, double now_sec);
+void vision_goal_controller_set_has_ball(
+    VisionGoalControllerHandle handle, int has_ball);
+void vision_goal_controller_update_ball_state(
+    VisionGoalControllerHandle handle, int has_ball, int ball_mode);
+int vision_goal_controller_has_ball(VisionGoalControllerHandle handle);
 VisionGoalResult vision_goal_controller_compute(
     VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
     int image_width, int image_height, double now_sec,
@@ -232,6 +256,12 @@ VisionGoalResult vision_goal_controller_compute_v2(
     VisionObjectTarget backboard_target, VisionGoalPoseObservation goal_pose,
     int image_width, int image_height, double now_sec,
     int line_reference_valid, int camera_actual_mode, int camera_settled);
+VisionGoalResult vision_goal_controller_compute_v3(
+    VisionGoalControllerHandle handle, VisionObjectTarget goal_target,
+    VisionObjectTarget backboard_target, VisionGoalPoseObservation goal_pose,
+    int image_width, int image_height, double now_sec,
+    int line_reference_valid, int camera_actual_mode, int camera_settled,
+    int action_feedback_enabled, int action_done, int action_active);
 void vision_goal_controller_reset(VisionGoalControllerHandle handle);
 
 typedef struct VisionSelectedMotionCommand {
@@ -264,6 +294,44 @@ VisionSelectedMissionCommand vision_select_mission_command(
     VisionBallResult ball_result, VisionHurdleResult hurdle_result,
     VisionGoalResult goal_result, double line_vx, double line_vy,
     double line_wz);
+VisionSelectedMissionCommand vision_select_mission_command_v2(
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, int ball_has_ball,
+    double line_vx, double line_vy, double line_wz);
+
+typedef void *VisionControlCommandCoordinatorHandle;
+
+typedef struct VisionControlCommand {
+  int command_type;
+  int mission;
+  int mission_phase;
+  int control_phase;
+  double vx;
+  double vy;
+  double wz;
+  int action;
+  uint64_t action_id;
+  int camera_request;
+} VisionControlCommand;
+
+VisionControlCommandCoordinatorHandle
+vision_control_command_coordinator_create(void);
+void vision_control_command_coordinator_destroy(
+    VisionControlCommandCoordinatorHandle handle);
+VisionControlCommand vision_control_command_compute(
+    VisionControlCommandCoordinatorHandle handle,
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, double line_vx, double line_vy,
+    double line_wz, uint64_t feedback_action_id, int action_acknowledged,
+    int action_done);
+VisionControlCommand vision_control_command_compute_v2(
+    VisionControlCommandCoordinatorHandle handle,
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, int ball_has_ball,
+    double line_vx, double line_vy, double line_wz,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done);
+void vision_control_command_coordinator_reset(
+    VisionControlCommandCoordinatorHandle handle);
 
 #ifdef __cplusplus
 }

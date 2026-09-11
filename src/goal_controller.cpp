@@ -11,6 +11,11 @@ namespace {
 constexpr double kTimeEpsilon = 1e-9;
 constexpr double kGeometryEpsilon = 1e-6;
 double SafeDenominator(double value) { return std::max(value, 1e-6); }
+bool IsZeroMotion(const MotionCommand &command) {
+  return std::abs(command.vx) <= kTimeEpsilon &&
+         std::abs(command.vy) <= kTimeEpsilon &&
+         std::abs(command.wz) <= kTimeEpsilon;
+}
 double WrapAngle(double angle) {
   constexpr double kPi = 3.14159265358979323846;
   while (angle > kPi) angle -= 2.0 * kPi;
@@ -62,6 +67,7 @@ const char *GoalController::ModeName(GoalMode mode) {
   case GoalMode::kShoot: return "GOAL_SHOOT";
   case GoalMode::kReturnCameraToLine: return "CAMERA_RETURN_TO_LINE_VIEW";
   case GoalMode::kHeadingRecovery: return "GOAL_HEADING_RECOVERY";
+  case GoalMode::kRlStopping: return "GOAL_RL_STOPPING";
   }
   return "UNKNOWN";
 }
@@ -71,10 +77,36 @@ double GoalController::Clamp(double value, double low, double high) {
 }
 
 void GoalController::StartAfterPickup(double now_sec) {
-  if (mode_ != GoalMode::kLineFollow) return;
-  ClearTracking();
-  mode_ = GoalMode::kPostPickupWait;
-  state_enter_sec_ = now_sec;
+  (void)now_sec;
+  SetHasBall(true);
+  goal_entry_armed_ = true;
+}
+
+void GoalController::SetHasBall(bool has_ball) {
+  if (!has_ball) {
+    has_ball_ = false;
+    goal_entry_armed_ = false;
+    if (mode_ == GoalMode::kLineFollow) ball_consumed_ = false;
+    return;
+  }
+  if (!ball_consumed_ && !has_ball_) {
+    has_ball_ = true;
+    // 공을 들기 전에 보였던 골대 이력으로 즉시 진입하지 않고, 보유 상태가
+    // 켜진 뒤의 프레임만 안정 검출 조건에 사용한다.
+    ClearTracking();
+  }
+}
+
+void GoalController::UpdateBallState(const BallResult &ball_result) {
+  SetHasBall(ball_result.has_ball);
+  const bool should_arm = has_ball_ && !ball_consumed_ &&
+                          ball_result.mode == BallMode::kLineFollow;
+  if (should_arm && !goal_entry_armed_) {
+    // Ball mode가 완전히 끝나기 전에 보인 골대 프레임은 진입 안정화 이력에서
+    // 제외한다.
+    ClearTracking();
+  }
+  goal_entry_armed_ = should_arm;
 }
 
 GoalResult GoalController::Compute(
@@ -91,6 +123,18 @@ GoalResult GoalController::Compute(
     const GoalPoseObservation &goal_pose, int image_width, int image_height,
     double now_sec, bool line_reference_valid,
     const CameraFeedback &camera_feedback) {
+  return Compute(goal_target, backboard_target, goal_pose, image_width,
+                 image_height, now_sec, line_reference_valid, camera_feedback,
+                 ActionExecutionFeedback{});
+}
+
+GoalResult GoalController::Compute(
+    const std::optional<ObjectTarget> &goal_target,
+    const std::optional<ObjectTarget> &backboard_target,
+    const GoalPoseObservation &goal_pose, int image_width, int image_height,
+    double now_sec, bool line_reference_valid,
+    const CameraFeedback &camera_feedback,
+    const ActionExecutionFeedback &action_feedback) {
   // SEARCH 진입은 전체 골대 검출로만 결정한다. 다만 한 번 APPROACH에
   // 들어간 뒤 전체 형상이 화면 밖으로 잘려도, 내부 백보드 bbox가 남아
   // 있으면 그 중심을 대신 추적하여 접근을 계속한다.
@@ -100,6 +144,14 @@ GoalResult GoalController::Compute(
       (!goal_target && may_track_backboard) ? backboard_target : goal_target;
   UpdateGoalTracker(approach_target, image_width, image_height);
   UpdatePoseTracker(backboard_target, goal_pose);
+  // 공을 실제로 들고 라인을 걷는 중에 전체 골대가 안정 검출되었을 때만
+  // 골대 미션을 잠근다. 골대 bbox만 보이거나 공 보유 상태만 켜진 것으로는
+  // 진입하지 않는다.
+  if (mode_ == GoalMode::kLineFollow && has_ball_ && goal_entry_armed_ &&
+      tracked_.stable && tracked_.visible) {
+    mode_ = GoalMode::kPostPickupWait;
+    state_enter_sec_ = now_sec;
+  }
   GoalResult result;
   result.mode = mode_;
   result.tracked = tracked_;
@@ -143,13 +195,18 @@ GoalResult GoalController::Compute(
     result.active = true;
     result.command = {0.0, 0.0, config_.search_wz};
     if (PoseReadyForFineAdjust()) {
-      mode_ = GoalMode::kFineAdjust;
+      mode_ = action_feedback.enabled ? GoalMode::kRlStopping
+                                      : GoalMode::kFineAdjust;
       state_enter_sec_ = now_sec;
       fine_adjust_history_.clear();
       ResetFineMotion();
       result.mode = mode_;
-      result.action_request = GoalActionRequest::kFineAdjust;
-      result.command = ComputeFineAdjustCommand(now_sec);
+      if (action_feedback.enabled) {
+        result.command = {};
+      } else {
+        result.action_request = GoalActionRequest::kFineAdjust;
+        result.command = ComputeFineAdjustCommand(now_sec);
+      }
     } else if (tracked_.stable && tracked_.visible) {
       mode_ = GoalMode::kApproach;
       state_enter_sec_ = now_sec;
@@ -161,13 +218,18 @@ GoalResult GoalController::Compute(
     result.active = true;
     if (tracked_.visible) result.command = ComputeApproachCommand();
     if (PoseReadyForFineAdjust()) {
-      mode_ = GoalMode::kFineAdjust;
+      mode_ = action_feedback.enabled ? GoalMode::kRlStopping
+                                      : GoalMode::kFineAdjust;
       state_enter_sec_ = now_sec;
       fine_adjust_history_.clear();
       ResetFineMotion();
       result.mode = mode_;
-      result.action_request = GoalActionRequest::kFineAdjust;
-      result.command = ComputeFineAdjustCommand(now_sec);
+      if (action_feedback.enabled) {
+        result.command = {};
+      } else {
+        result.action_request = GoalActionRequest::kFineAdjust;
+        result.command = ComputeFineAdjustCommand(now_sec);
+      }
       return result;
     }
     if (lost_count_ >= std::max(1, config_.lost_frames)) {
@@ -180,9 +242,60 @@ GoalResult GoalController::Compute(
     }
     return result;
   }
+  case GoalMode::kRlStopping:
+    result.active = true;
+    result.command = {};
+    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
+        std::max(0.0, config_.rl_stop_duration_sec)) {
+      mode_ = GoalMode::kFineAdjust;
+      state_enter_sec_ = now_sec;
+      fine_adjust_history_.clear();
+      ResetFineMotion();
+      result.mode = mode_;
+      result.action_request = GoalActionRequest::kFineAdjust;
+      result.command = ComputeFineAdjustCommand(now_sec);
+      if (action_feedback.enabled && IsZeroMotion(result.command)) {
+        // 이미 정렬 허용범위에 들어온 경우에도 RL VELOCITY(0,0,0)으로
+        // 돌아가지 않고, 정지자세 ACTION에서 연속 관측을 확인한다.
+        fine_adjust_hold_active_ = true;
+        result.action_request = GoalActionRequest::kFineAdjustHold;
+      }
+    }
+    return result;
   case GoalMode::kFineAdjust: {
     result.active = true;
-    result.action_request = GoalActionRequest::kFineAdjust;
+    if (action_feedback.enabled) {
+      if (fine_adjust_hold_active_) {
+        // STEP/TURN 뒤의 재측정 구간도 별도 ACTION이다. 이 ACTION이 실행되는
+        // 동안 RL 속도 제어는 켜지지 않으며 DONE 뒤에만 자세를 다시 판단한다.
+        result.action_request = GoalActionRequest::kFineAdjustHold;
+        result.command = {};
+        if (action_feedback.action_active && !action_feedback.action_done) {
+          return result;
+        }
+        if (!action_feedback.action_done) return result;
+        fine_adjust_hold_active_ = false;
+        ResetFineMotion();
+        result.action_request = GoalActionRequest::kFineAdjust;
+      } else {
+        result.action_request = GoalActionRequest::kFineAdjust;
+        // 동일 미세걸음 action_id가 실행 중인 동안에는 새 관측으로 상태나
+        // 동작 방향을 바꾸지 않는다. DONE 뒤에는 HOLD ACTION부터 실행한다.
+        if (action_feedback.action_active && !action_feedback.action_done) {
+          result.command = {};
+          return result;
+        }
+        if (action_feedback.action_done) {
+          ResetFineMotion();
+          fine_adjust_hold_active_ = true;
+          result.action_request = GoalActionRequest::kFineAdjustHold;
+          result.command = {};
+          return result;
+        }
+      }
+    } else {
+      result.action_request = GoalActionRequest::kFineAdjust;
+    }
     if (pose_lost_count_ >= std::max(1, config_.lost_frames)) {
       mode_ = tracked_.visible ? GoalMode::kApproach : GoalMode::kSearch;
       state_enter_sec_ = now_sec;
@@ -210,14 +323,23 @@ GoalResult GoalController::Compute(
     if (tracked_pose_.visible) {
       result.command = ComputeFineAdjustCommand(now_sec);
     }
+    if (action_feedback.enabled && IsZeroMotion(result.command)) {
+      fine_adjust_hold_active_ = true;
+      result.action_request = GoalActionRequest::kFineAdjustHold;
+    }
     return result;
   }
   case GoalMode::kShoot:
     result.active = true;
     result.action_request = GoalActionRequest::kShoot;
     result.command = {};
-    if (now_sec - state_enter_sec_ + kTimeEpsilon >=
-        std::max(0.0, config_.shoot_placeholder_sec)) {
+    if ((action_feedback.enabled && action_feedback.action_done) ||
+        (!action_feedback.enabled &&
+         now_sec - state_enter_sec_ + kTimeEpsilon >=
+             std::max(0.0, config_.shoot_placeholder_sec))) {
+      has_ball_ = false;
+      ball_consumed_ = true;
+      goal_entry_armed_ = false;
       mode_ = GoalMode::kReturnCameraToLine;
       state_enter_sec_ = now_sec;
       ClearTracking();
@@ -475,6 +597,7 @@ void GoalController::ResetFineMotion() {
   fine_pulse_command_ = {};
   fine_motion_phase_enter_sec_ = 0.0;
   fine_pulse_duration_sec_ = 0.0;
+  fine_adjust_hold_active_ = false;
 }
 
 bool GoalController::PoseReadyForFineAdjust() const {
@@ -515,8 +638,45 @@ void GoalController::ClearTracking() {
 void GoalController::Reset() {
   mode_ = GoalMode::kLineFollow;
   state_enter_sec_ = 0.0;
+  has_ball_ = false;
+  ball_consumed_ = false;
+  goal_entry_armed_ = false;
   ResetFineMotion();
   ClearTracking();
 }
 
 } // namespace vision_core
+
+/*
+ROS 통합 명령표 (ActionExecutionFeedback.enabled=true)
+형식: MODE -> command_type, mission, mission_phase, velocity, action, camera
+
+LINE_FOLLOW(0)
+  -> VELOCITY, LINE(1), 0, line controller의 vx/vy/wz, NONE, NONE
+GOAL_POST_PICKUP_WAIT(1)
+  -> VELOCITY, GOAL(3), 1, 0/0/0, NONE, NONE
+CAMERA_TILT_TO_GOAL_VIEW(2)
+  -> VELOCITY, GOAL(3), 2, camera_tilt_forward_vx/0/0, NONE, GOAL(3)
+GOAL_SEARCH(3)
+  -> VELOCITY, GOAL(3), 3, 0/0/search_wz, NONE, NONE
+GOAL_APPROACH(4)
+  -> VELOCITY, GOAL(3), 4, ComputeApproachCommand(), NONE, NONE
+GOAL_RL_STOPPING(9)
+  -> VELOCITY, GOAL(3), 9, 0/0/0, NONE, NONE
+GOAL_FINE_ADJUST(5)
+  -> 미세조정 pulse가 0이 아니면 ACTION, GOAL(3), 5, 0/0/0,
+     STEP_FORWARD_HALF(1)/STEP_BACKWARD(3)/STEP_LEFT(4)/STEP_RIGHT(5)/
+     TURN_LEFT(6)/TURN_RIGHT(7) 중 오차축에 맞는 하나, NONE
+  -> 정착·재측정 구간이면 ACTION, GOAL(3), 5, 0/0/0,
+     FINE_ADJUST_HOLD(14), NONE
+GOAL_SHOOT(6)
+  -> ACTION, GOAL(3), 6, 0/0/0, SHOOT(12), NONE
+CAMERA_RETURN_TO_LINE_VIEW(7)
+  -> VELOCITY, GOAL(3), 7, 0/0/0, NONE, FORWARD(2)
+GOAL_HEADING_RECOVERY(8)
+  -> VELOCITY, GOAL(3), 8, line controller의 복구 vx/vy/wz, NONE, NONE
+ACTION은 ControlCommandCoordinator가 action_id를 발급한다. ACK 전에는 ACTION을
+같은 ID로 반복하고, ACK 뒤에는 command_type=HOLD와 0/0/0을 DONE까지 유지한다.
+enabled=false인 기존 호환 호출은 ACTION 대신 controller의 시간 기반 placeholder
+속도/정지를 사용한다. 실제 최종 조합은 control_command.cpp에서 결정한다.
+*/

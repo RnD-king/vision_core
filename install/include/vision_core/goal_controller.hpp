@@ -14,6 +14,9 @@ enum class GoalMode {
   kTiltCameraToGoal = 2,
   kSearch = 3,
   kApproach = 4,
+  // 실행 순서는 APPROACH/SEARCH -> RL_STOPPING -> FINE_ADJUST다. 기존
+  // 외부 연결에서 사용하는 mode 숫자를 유지하기 때문에 값은 9다.
+  kRlStopping = 9,
   kFineAdjust = 5,
   kShoot = 6,
   kReturnCameraToLine = 7,
@@ -24,6 +27,7 @@ enum class GoalActionRequest {
   kNone = 0,
   kFineAdjust = 1,
   kShoot = 2,
+  kFineAdjustHold = 3,
 };
 
 struct GoalConfig {
@@ -31,7 +35,7 @@ struct GoalConfig {
   int stable_min_hits{7};
   int lost_frames{5};
   double smooth_alpha{0.45};
-  // 공 복귀 뒤 5초/직선 확인은 외부 mission adapter가 끝낸 뒤 StartAfterPickup을 호출한다.
+  // 공 보유 + 골대 안정 검출 뒤 추가로 기다릴 시간이다.
   double post_pickup_wait_sec{0.0};
   double camera_motion_timeout_sec{3.0};
   // 골대 시야로 카메라를 올리는 동안 라인 방향으로 계속 직진한다.
@@ -69,6 +73,7 @@ struct GoalConfig {
   int fine_adjust_min_hits{7};
   // 정렬 완료 뒤 실제 슛 모션을 연결하기 전까지 정지하는 시간이다.
   double shoot_placeholder_sec{2.0};
+  double rl_stop_duration_sec{1.50};
 };
 
 // RGB-D 입력부가 백보드 bbox의 좌/우 끝 3x3 깊이 중앙값으로 계산해 전달한다.
@@ -117,12 +122,25 @@ struct GoalResult {
 class GoalController {
 public:
   explicit GoalController(const GoalConfig &config = GoalConfig{});
-  // 실제 공 집기 확인이 끝난 시점에 한 번 호출한다.
+  // 호환 API: 공 보유 상태만 켠다. 실제 골대 미션은 안정적으로 골대가
+  // 검출될 때 시작한다.
   void StartAfterPickup(double now_sec);
+  void SetHasBall(bool has_ball);
+  // 매 프레임 BallResult를 연결할 때 사용한다. 공 미션이 LINE_FOLLOW까지
+  // 끝난 뒤에만 골대 진입을 허용한다.
+  void UpdateBallState(const BallResult &ball_result);
+  bool HasBall() const { return has_ball_; }
   GoalResult Compute(const std::optional<ObjectTarget> &goal_target,
                      int image_width, int image_height, double now_sec,
                      bool line_reference_valid,
                      const CameraFeedback &camera_feedback);
+  GoalResult Compute(const std::optional<ObjectTarget> &goal_target,
+                     const std::optional<ObjectTarget> &backboard_target,
+                     const GoalPoseObservation &goal_pose,
+                     int image_width, int image_height, double now_sec,
+                     bool line_reference_valid,
+                     const CameraFeedback &camera_feedback,
+                     const ActionExecutionFeedback &action_feedback);
   GoalResult Compute(const std::optional<ObjectTarget> &goal_target,
                      const std::optional<ObjectTarget> &backboard_target,
                      const GoalPoseObservation &goal_pose,
@@ -166,6 +184,12 @@ private:
   MotionCommand fine_pulse_command_;
   double fine_motion_phase_enter_sec_{0.0};
   double fine_pulse_duration_sec_{0.0};
+  // ROS ACTION 경로에서 미세걸음 뒤 RL을 다시 켜지 않고 정지자세 ACTION의
+  // ACK/DONE을 기다리는 중인지 나타낸다.
+  bool fine_adjust_hold_active_{false};
+  bool has_ball_{false};
+  bool ball_consumed_{false};
+  bool goal_entry_armed_{false};
 };
 
 } // namespace vision_core

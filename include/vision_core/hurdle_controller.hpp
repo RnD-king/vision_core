@@ -12,9 +12,15 @@ enum class HurdleMode {
   kLineFollow = 0,
   kApproach = 1,
   kTiltCameraDownAndSlow = 2,
+  // 실행 순서는 TILT_DOWN -> RL_STOPPING -> CONTACT_WALK다. 기존 외부
+  // 연결에서 사용하는 mode 숫자를 유지하기 때문에 값은 6이다.
+  kRlStopping = 6,
   kContactWalk = 3,
   kCross = 4,
   kReturnCameraToLine = 5,
+  kRecoveryForward = 7,
+  kRecoveryDown = 8,
+  kFailed = 9,
 };
 
 enum class HurdleActionRequest {
@@ -24,8 +30,8 @@ enum class HurdleActionRequest {
 };
 
 struct HurdleConfig {
-  int stable_window{10};
-  int stable_min_hits{7};
+  int stable_window{30};
+  int stable_min_hits{20};
   int lost_frames{5};
   double smooth_alpha{0.45};
   // 임시 허들 접근은 공의 원거리 접근 파라미터와 같은 값을 사용한다.
@@ -35,6 +41,9 @@ struct HurdleConfig {
   double approach_wz_gain{2.50};
   double approach_wz_max{0.80};
   double approach_dw_max{0.35};
+  // 최초 진입은 허들 중심이 원본 화면 높이의 이 비율 이상 내려온 프레임만
+  // 안정 검출 hit로 인정한다.
+  double acquire_min_v_norm{0.60};
   double tilt_trigger_v_norm{0.75};
   int tilt_trigger_window{10};
   int tilt_trigger_min_hits{7};
@@ -47,6 +56,13 @@ struct HurdleConfig {
   double contact_walk_placeholder_sec{2.0};
   double cross_placeholder_sec{3.0};
   double hurdle_ignore_duration_sec{5.0};
+  double rl_stop_duration_sec{1.50};
+  int recovery_reacquire_min_hits{3};
+  // 검출 손실 뒤 저속 복구를 유지할 최대 시간. 초과하면 kFailed로 잠긴다.
+  double recovery_timeout_sec{5.0};
+  double recovery_center_tolerance_norm{0.12};
+  double recovery_forward_vx{0.10};
+  double recovery_turn_wz{0.25};
 };
 
 struct TrackedHurdle {
@@ -78,6 +94,11 @@ public:
                        int image_width, int image_height, double now_sec,
                        double line_vx, bool line_reference_valid,
                        const CameraFeedback &camera_feedback);
+  HurdleResult Compute(const std::optional<ObjectTarget> &hurdle_target,
+                       int image_width, int image_height, double now_sec,
+                       double line_vx, bool line_reference_valid,
+                       const CameraFeedback &camera_feedback,
+                       const ActionExecutionFeedback &action_feedback);
   static const char *ModeName(HurdleMode mode);
   void Reset();
 
@@ -87,13 +108,16 @@ private:
   void UpdateTracker(const std::optional<ObjectTarget> &target, int image_width,
                      int image_height);
   MotionCommand ComputeApproachCommand() const;
+  MotionCommand ComputeRecoveryCommand() const;
   void ResetToLine(bool clear_ignore);
 
   HurdleConfig config_;
   HurdleMode mode_{HurdleMode::kLineFollow};
   std::deque<bool> hit_history_;
+  std::deque<bool> acquire_history_;
   std::deque<bool> tilt_history_;
   int lost_count_{0};
+  int recovery_visible_count_{0};
   bool has_smoothed_{false};
   TrackedHurdle tracked_;
   MotionCommand last_command_;
@@ -102,6 +126,7 @@ private:
   double latched_tilt_vx_{0.0};
   double state_enter_sec_{0.0};
   double ignore_until_sec_{0.0};
+  double last_seen_u_norm_{0.50};
 };
 
 } // namespace vision_core

@@ -28,7 +28,8 @@ SelectedMotionCommand SelectMotionCommand(
     const BallResult &ball_result, const MotionCommand &line_candidate);
 
 // 통합 미션 선택: 명시적으로 시작되는 골대 미션을 가장 먼저 유지하고,
-// 일반 라인 주행 중 검출되는 공과 허들은 공 우선으로 선택한다.
+// 공을 들고 있지 않은 일반 라인 주행에서는 허들을 공보다 우선한다.
+// 공 집기 성공부터 슛 완료까지는 허들을 선택하지 않는다.
 SelectedMotionCommand SelectMotionCommand(
     const BallResult &ball_result, const HurdleResult &hurdle_result,
     const GoalResult &goal_result, const MotionCommand &line_candidate);

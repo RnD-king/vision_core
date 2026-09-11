@@ -85,4 +85,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/shared_vision_core_hurdle_controller_test.dir/DependInfo.cmake"
   "CMakeFiles/shared_vision_core_goal_controller_test.dir/DependInfo.cmake"
   "CMakeFiles/shared_vision_core_line_detection_stability_test.dir/DependInfo.cmake"
+  "CMakeFiles/shared_vision_core_control_command_test.dir/DependInfo.cmake"
+  "CMakeFiles/shared_vision_core_p2p_motion_quantizer_test.dir/DependInfo.cmake"
+  "CMakeFiles/shared_vision_core_mission_controller_test.dir/DependInfo.cmake"
   )
