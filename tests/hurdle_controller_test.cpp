@@ -1,4 +1,5 @@
 #include "vision_core/hurdle_controller.hpp"
+#include "vision_core/config_loader.hpp"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -40,7 +41,7 @@ CameraFeedback Down() { return {CameraMode::kDown, true}; }
 CameraFeedback Moving() { return {CameraMode::kTransition, false}; }
 
 void TestHurdlePlaceholderSequence() {
-  HurdleConfig cfg;
+  HurdleConfig cfg = vision_core::LoadDefaultAlgorithmConfig().hurdle;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_trigger_window = 1;
@@ -80,7 +81,7 @@ void TestHurdlePlaceholderSequence() {
 }
 
 void TestHurdleUsesBallApproachNumbers() {
-  HurdleConfig cfg;
+  HurdleConfig cfg = vision_core::LoadDefaultAlgorithmConfig().hurdle;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_trigger_window = 1;
@@ -104,7 +105,7 @@ void TestHurdleUsesBallApproachNumbers() {
 }
 
 void TestHurdleFeedbackSequenceStopsRlAndWaitsForDone() {
-  HurdleConfig cfg;
+  HurdleConfig cfg = vision_core::LoadDefaultAlgorithmConfig().hurdle;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.tilt_trigger_window = 1;
@@ -163,7 +164,7 @@ void TestDefaultEntryRequiresTwentyOfThirtyCloseDetections() {
 }
 
 void TestHurdleLossUsesTimedRecoveryAndFails() {
-  HurdleConfig cfg;
+  HurdleConfig cfg = vision_core::LoadDefaultAlgorithmConfig().hurdle;
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.lost_frames = 1;

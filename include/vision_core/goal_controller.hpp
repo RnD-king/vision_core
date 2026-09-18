@@ -31,49 +31,51 @@ enum class GoalActionRequest {
 };
 
 struct GoalConfig {
-  int stable_window{10};
-  int stable_min_hits{7};
-  int lost_frames{5};
-  double smooth_alpha{0.45};
-  // 공 보유 + 골대 안정 검출 뒤 추가로 기다릴 시간이다.
-  double post_pickup_wait_sec{0.0};
-  double camera_motion_timeout_sec{3.0};
+  int stable_window{};
+  int stable_min_hits{};
+  int lost_frames{};
+  double smooth_alpha{};
+  // 공 보유 + 거리 검증된 백보드 안정 검출 뒤 추가로 기다릴 시간이다.
+  double post_pickup_wait_sec{};
+  double camera_motion_timeout_sec{};
   // 골대 시야로 카메라를 올리는 동안 라인 방향으로 계속 직진한다.
-  double camera_tilt_forward_vx{0.30};
-  double search_wz{0.30};
-  double target_u_norm{0.50};
+  double camera_tilt_forward_vx{};
+  double search_wz{};
+  double target_u_norm{};
   // 골대 앞에서는 항상 저속으로 접근한다.
-  double approach_vx{0.25};
-  double approach_wz_gain{2.0};
-  double approach_wz_max{0.70};
-  // 전체 골대로 접근하다가 백보드 깊이가 이 값 이하면 자세 기반 미세정렬로 바꾼다.
-  // 목표 백보드 거리 0.50m보다 0.30m 앞에서 미세조정을 시작한다.
-  double fine_adjust_start_z_m{0.80};
+  double approach_vx{};
+  double approach_wz_gain{};
+  double approach_wz_max{};
+  // 백보드로 접근하다가 깊이가 이 값 이하면 자세 기반 미세정렬로 바꾼다.
+  // 시작 거리는 공통 알고리즘 YAML에서 정한다.
+  double fine_adjust_start_z_m{};
   // my_cv/ball_and_hoop.py와 같은 투척 위치 계산값이다.
-  double hoop_radius_m{0.10};
-  double throwing_range_m{0.40};
-  double target_yaw_rad{0.0};
-  double position_tolerance_m{0.08};
-  double yaw_tolerance_rad{0.1396263402};
-  double fine_vx_gain{0.60};
-  double fine_vy_gain{0.80};
-  double fine_wz_gain{1.00};
+  double hoop_radius_m{};
+  double throwing_range_m{};
+  // 기존 정면 정렬 설정과의 source compatibility를 위해 보존한다. 현재 슛은
+  // 림 중심을 향하도록 실행기에 전달할 yaw를 직접 계산한다.
+  double target_yaw_rad{};
+  double position_tolerance_m{};
+  double yaw_tolerance_rad{};
+  double fine_vx_gain{};
+  double fine_vy_gain{};
+  double fine_wz_gain{};
   // 현재 보행 정책이 거의 반응하지 않는 미소 속도를 피하고, 한 축씩
   // 일정 시간 움직인 뒤 멈춰서 다시 측정한다.
-  double fine_translation_min{0.10};
-  double fine_wz_min{0.20};
-  double fine_vx_max{0.125};
-  double fine_vy_max{0.10};
-  double fine_wz_max{0.30};
-  double fine_pulse_duration_sec{0.80};
-  double fine_near_pulse_duration_sec{0.60};
-  double fine_near_error_m{0.12};
-  double fine_settle_duration_sec{0.60};
-  int fine_adjust_window{10};
-  int fine_adjust_min_hits{7};
+  double fine_translation_min{};
+  double fine_wz_min{};
+  double fine_vx_max{};
+  double fine_vy_max{};
+  double fine_wz_max{};
+  double fine_pulse_duration_sec{};
+  double fine_near_pulse_duration_sec{};
+  double fine_near_error_m{};
+  double fine_settle_duration_sec{};
+  int fine_adjust_window{};
+  int fine_adjust_min_hits{};
   // 정렬 완료 뒤 실제 슛 모션을 연결하기 전까지 정지하는 시간이다.
-  double shoot_placeholder_sec{2.0};
-  double rl_stop_duration_sec{1.50};
+  double shoot_placeholder_sec{};
+  double rl_stop_duration_sec{};
 };
 
 // RGB-D 입력부가 백보드 bbox의 좌/우 끝 3x3 깊이 중앙값으로 계산해 전달한다.
@@ -85,6 +87,13 @@ struct GoalPoseObservation {
   double yaw_rad{0.0};
   double confidence{0.0};
 };
+
+// 중심 depth는 백보드까지의 전방 거리와 중심 위치에, 좌/우 depth는
+// 백보드 평면의 yaw 계산에 사용한다.
+GoalPoseObservation EstimateGoalPoseFromBackboardDepths(
+    double center_u_px, double center_depth_m, double left_u_px,
+    double left_depth_m, double right_u_px, double right_depth_m,
+    const Intrinsics &intrinsics, double confidence = 1.0);
 
 struct TrackedGoalPose {
   bool stable{false};
@@ -116,12 +125,16 @@ struct GoalResult {
   GoalMode mode{GoalMode::kLineFollow};
   TrackedGoal tracked;
   TrackedGoalPose pose;
+  // 백보드 pose와 규정상 림 오프셋으로 계산한 림 중심 방향이다.
+  // 로봇 yaw 기준 좌회전(+), 우회전(-)이며 SHOOT action에만 사용한다.
+  double shoot_yaw_rad{0.0};
   MotionCommand command;
 };
 
 class GoalController {
 public:
-  explicit GoalController(const GoalConfig &config = GoalConfig{});
+  GoalController();
+  explicit GoalController(const GoalConfig &config);
   // 호환 API: 공 보유 상태만 켠다. 실제 골대 미션은 안정적으로 골대가
   // 검출될 때 시작한다.
   void StartAfterPickup(double now_sec);
@@ -130,7 +143,8 @@ public:
   // 끝난 뒤에만 골대 진입을 허용한다.
   void UpdateBallState(const BallResult &ball_result);
   bool HasBall() const { return has_ball_; }
-  GoalResult Compute(const std::optional<ObjectTarget> &goal_target,
+  // 단일-target 호환 API에서는 전달된 값을 추적 대상(현재는 backboard)으로 본다.
+  GoalResult Compute(const std::optional<ObjectTarget> &tracking_target,
                      int image_width, int image_height, double now_sec,
                      bool line_reference_valid,
                      const CameraFeedback &camera_feedback);
@@ -165,6 +179,7 @@ private:
   void ResetFineMotion();
   bool PoseReadyForFineAdjust() const;
   bool PoseAligned() const;
+  double ComputeShootYawRad() const;
   void ClearTracking();
 
   GoalConfig config_;
@@ -187,6 +202,7 @@ private:
   // ROS ACTION 경로에서 미세걸음 뒤 RL을 다시 켜지 않고 정지자세 ACTION의
   // ACK/DONE을 기다리는 중인지 나타낸다.
   bool fine_adjust_hold_active_{false};
+  double shoot_yaw_rad_{0.0};
   bool has_ball_{false};
   bool ball_consumed_{false};
   bool goal_entry_armed_{false};

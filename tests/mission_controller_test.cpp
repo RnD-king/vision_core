@@ -1,4 +1,5 @@
 #include "vision_core/mission_controller.hpp"
+#include "vision_core/config_loader.hpp"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -36,7 +37,7 @@ MissionFrameInput Frame(double now_sec) {
 }
 
 MissionControllerConfig FastConfig() {
-  MissionControllerConfig config;
+  MissionControllerConfig config = LoadDefaultAlgorithmConfig();
   config.line_features.image_center_u = 50.0;
   config.ball.stable_window = 1;
   config.ball.stable_min_hits = 1;
@@ -91,12 +92,54 @@ void TestCarryingBallAllowsOnlyGoalEntry() {
   auto input = Frame(0.0);
   input.ball_target = Target(1, 0.5, 0.5);
   input.hurdle_target = Target(4, 0.5, 0.7);
-  input.goal_target = Target(2, 0.5, 0.4);
+  // goal class가 없어도 검증된 backboard만으로 골대 미션에 진입한다.
+  input.backboard_target = Target(3, 0.5, 0.4);
   const auto result = controller.Step(input);
   assert(result.active_mission == MissionType::kGoal);
   assert(result.goal.mode == GoalMode::kPostPickupWait);
   assert(result.hurdle.mode == HurdleMode::kLineFollow);
   assert(result.ball.mode == BallMode::kLineFollow);
+}
+
+void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
+  auto config = FastConfig();
+  config.enable_ball = false;
+  config.enable_hurdle = false;
+  config.enable_goal = false;
+  config.line.line_stable_window = 1;
+  config.line.line_stable_min_hits = 1;
+  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
+  config.command.first_action_id = 500;
+  MissionController controller(config);
+
+  auto input = Frame(0.0);
+  auto result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kAction);
+  assert(result.command.action_category == ActionCategory::kLocomotion);
+  assert(result.command.action_execution_kind ==
+         ActionExecutionKind::kVelocityCompatible);
+  assert(result.command.action_id == 500);
+  assert(result.command.velocity.vx == 0.0);
+  assert(result.command.pre_p2p_motion.vx == result.line_command.vx);
+  assert(result.command.pre_p2p_motion.vx > 0.0);
+  const MotionCommand first_pre_p2p = result.command.pre_p2p_motion;
+
+  // ACK 뒤에도 같은 action_id와 최초 선택 시점의 PRE-P2P 명령을 유지한다.
+  input = Frame(0.1);
+  input.delivery_feedback = {500, true, false};
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kHold);
+  assert(result.command.control_phase == ControlPhase::kWaitingActionDone);
+  assert(result.command.action_id == 500);
+  assert(result.command.pre_p2p_motion.vx == first_pre_p2p.vx);
+
+  // DONE은 MissionController 상태를 외부에서 직접 바꾸지 않고 feedback으로만
+  // 전달하며, 다음 보행 블록은 새 ID로 발급된다.
+  input = Frame(0.2);
+  input.delivery_feedback = {500, true, true};
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kAction);
+  assert(result.command.action_id == 501);
 }
 
 } // namespace
@@ -105,6 +148,7 @@ int main() {
   TestOnlyActiveBallControllerAdvances();
   TestHurdleEntryHasPriorityOverBall();
   TestCarryingBallAllowsOnlyGoalEntry();
+  TestMissionControllerReturnsActionAndPreP2pMotionTogether();
   std::cout << "mission controller tests passed\n";
   return 0;
 }

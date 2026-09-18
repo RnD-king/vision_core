@@ -6,6 +6,8 @@
 
 #include "vision_core/ball_controller.hpp"
 
+#include "vision_core/config_loader.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -14,6 +16,9 @@ namespace {
 double SafeDenominator(double value) { return std::max(value, 1e-6); }
 constexpr double kTimeEpsilon = 1e-9;
 } // 익명 네임스페이스
+
+BallController::BallController()
+    : BallController(LoadDefaultAlgorithmConfig().ball) {}
 
 BallController::BallController(const BallConfig &config) : config_(config) {}
 
@@ -351,13 +356,17 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
       state_enter_sec_ = now_sec;
       result.mode = mode_;
       result.action_request = BallActionRequest::kFineAdjustForward;
+      result.command = ComputeFineAdjustPlaceholderCommand();
+      last_command_ = result.command;
     }
     return result;
   case BallMode::kFineAdjustForPickup:
     result.active = true;
     result.action_request = BallActionRequest::kFineAdjustForward;
-    result.command = {};
-    last_command_ = {};
+    // 실제 ROS에서는 STEP_FORWARD_HALF action을 실행하지만, MuJoCo 실행기는
+    // 같은 action_id 생명주기 아래 이 연속속도를 RL 보행기에 줄 수 있다.
+    result.command = ComputeFineAdjustPlaceholderCommand();
+    last_command_ = result.command;
     if ((action_feedback.enabled && action_feedback.action_done) ||
         (!action_feedback.enabled &&
          now_sec - state_enter_sec_ + kTimeEpsilon >=

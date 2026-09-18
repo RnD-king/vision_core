@@ -7,8 +7,11 @@
 #include "vision_core/control_command.hpp"
 #include "vision_core/goal_controller.hpp"
 #include "vision_core/hurdle_controller.hpp"
+#include "vision_core/line_detection_extractor.hpp"
 #include "vision_core/line_feature_extractor.hpp"
 #include "vision_core/line_velocity_controller.hpp"
+#include "vision_core/object_target_extractor.hpp"
+#include "vision_core/object_association_tracker.hpp"
 
 namespace vision_core {
 
@@ -19,12 +22,19 @@ struct MissionControllerConfig {
   HurdleConfig hurdle;
   GoalConfig goal;
   ControlCommandConfig command;
-  double line_observation_dt{1.0 / 15.0};
-  bool enable_ball{true};
-  bool enable_hurdle{true};
-  bool enable_goal{true};
+  LineDetectionConfig line_detection;
+  ObjectTargetConfig object_targets;
+  ObjectAssociationConfig object_association;
+  // YOLO backboard 후보 중심의 aligned depth가 이 범위 안에 있어야 실제
+  // backboard 관측으로 인정한다.
+  double backboard_min_depth_m{};
+  double backboard_max_depth_m{};
+  double line_observation_dt{};
+  bool enable_ball{};
+  bool enable_hurdle{};
+  bool enable_goal{};
   // Goal 단독 시험처럼 공 집기 과정을 생략하는 구성에서만 사용한다.
-  bool initial_has_ball{false};
+  bool initial_has_ball{};
 };
 
 struct MissionFrameInput {
@@ -40,11 +50,18 @@ struct MissionFrameInput {
   int image_height{0};
   double now_sec{0.0};
   CameraFeedback camera_feedback;
+  // true이면 controller용 ActionExecutionFeedback을 직전 공통 command와
+  // delivery_feedback에서 MissionController가 직접 만든다. 실행기 어댑터는
+  // controller 상태를 건드리지 않고 ACK/DONE만 반환하면 된다.
+  bool command_transport_enabled{false};
+  // command_transport_enabled=false인 기존 직접 호출자를 위한 호환 입력이다.
   ActionExecutionFeedback action_feedback;
   CommandDeliveryFeedback delivery_feedback;
 };
 
 struct MissionFrameResult {
+  // 최종 ROS용 P2P action과 MuJoCo가 선택적으로 사용할 양자화 전
+  // pre_p2p_motion이 같은 결과에 함께 들어 있다.
   ControlCommand command;
   MissionType active_mission{MissionType::kLine};
   Features line_features;
@@ -57,14 +74,63 @@ struct MissionFrameResult {
   GoalResult goal;
 };
 
+// 센서 adapter가 detection 하나에 부가할 수 있는 센서 의존 표본이다.
+// depth 영상 해석은 ROS에 남기고, 거리/자세 계산은 core가 수행한다.
+struct PerceptionDetection {
+  Detection detection;
+  std::optional<double> center_depth_m;
+  std::optional<double> left_depth_m;
+  std::optional<double> right_depth_m;
+};
+
+struct PerceptionFrameInput {
+  std::vector<PerceptionDetection> detections;
+  Intrinsics intrinsics;
+  bool enable_imu_rectification{false};
+  bool imu_valid{false};
+  double roll_rad{0.0};
+  double pitch_rad{0.0};
+  double previous_vx{0.0};
+  double previous_wz{0.0};
+  int image_width{0};
+  int image_height{0};
+  double now_sec{0.0};
+  CameraFeedback camera_feedback;
+  bool command_transport_enabled{false};
+  ActionExecutionFeedback action_feedback;
+  CommandDeliveryFeedback delivery_feedback;
+};
+
+struct PreparedPerceptionFrame {
+  std::vector<Point2> raw_line_centers;
+  std::vector<Point2> line_centers;
+  ObjectTargets targets;
+  // center depth는 후보 검증과 접근 거리 판정에 항상 사용한다. 좌/우 depth
+  // 기반 goal_pose는 미세조정 진입 거리 이후에만 유효해진다.
+  GoalPoseObservation goal_pose;
+  std::optional<double> backboard_center_depth_m;
+  std::optional<double> backboard_left_depth_m;
+  std::optional<double> backboard_right_depth_m;
+  bool imu_rectification_applied{false};
+};
+
+struct PerceptionMissionFrameResult {
+  MissionFrameResult mission;
+  PreparedPerceptionFrame perception;
+};
+
 // 전체 미션의 유일한 진입점이다. LINE에서만 진입 후보를 관찰하고, 물체
 // 미션이 잠긴 동안에는 해당 controller 하나만 실행한다.
 class MissionController {
 public:
-  explicit MissionController(
-      const MissionControllerConfig &config = MissionControllerConfig{});
+  // 설치된 공통 algorithm YAML을 읽는다. 파일이나 필수 키가
+  // 없으면 불완전한 0 설정으로 계속하지 않고 예외를 던진다.
+  MissionController();
+  explicit MissionController(const MissionControllerConfig &config);
 
   MissionFrameResult Step(const MissionFrameInput &input);
+  PerceptionMissionFrameResult StepPerception(
+      const PerceptionFrameInput &input);
   MissionType ActiveMission() const { return active_mission_; }
   bool HasBall() const { return has_ball_; }
   void Reset();
@@ -82,12 +148,18 @@ private:
   HurdleController hurdle_controller_;
   GoalController goal_controller_;
   ControlCommandCoordinator command_coordinator_;
+  // 서로 다른 클래스의 identity가 섞이지 않도록 상태를 분리한다.
+  ObjectAssociationTracker ball_association_tracker_;
+  ObjectAssociationTracker backboard_association_tracker_;
+  ObjectAssociationTracker hurdle_association_tracker_;
   LineFeatureState line_feature_state_;
   MissionType active_mission_{MissionType::kLine};
   bool has_ball_{false};
   BallResult ball_result_;
   HurdleResult hurdle_result_;
   GoalResult goal_result_;
+  // delivery feedback을 해당 Mission action에만 라우팅하기 위한 직전 출력이다.
+  ControlCommand last_command_;
 };
 
 } // namespace vision_core

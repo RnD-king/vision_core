@@ -1,5 +1,6 @@
 #include "vision_core/line_velocity_controller.hpp"
 #include "vision_core/line_feature_extractor.hpp"
+#include "vision_core/config_loader.hpp"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -98,6 +99,8 @@ void TestLookaheadApproachUsesOnlyFarPoint() {
 }
 
 void TestStraightKeepsCurveScoreNearZero() {
+  const auto config =
+      vision_core::LoadDefaultAlgorithmConfig().line_features;
   const std::vector<vision_core::Point2> points{
       {320.0, 420.0}, {320.0, 350.0}, {320.0, 280.0},
       {320.0, 210.0}, {320.0, 140.0}, {320.0, 70.0},
@@ -105,13 +108,15 @@ void TestStraightKeepsCurveScoreNearZero() {
   vision_core::LineFeatureState state;
   for (int frame = 0; frame < 10; ++frame) {
     const auto features = vision_core::ComputeLineFeatures(
-        points, 640, 480, false, 0.0, 0.0, {}, &state);
+        points, 640, 480, false, 0.0, 0.0, config, &state);
     assert(std::abs(features.u_err_lookahead) < 1e-9);
   }
   assert(state.filtered_curve_score < 1e-9);
 }
 
 void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
+  const auto config =
+      vision_core::LoadDefaultAlgorithmConfig().line_features;
   const std::vector<vision_core::Point2> curve_points{
       {320.0, 420.0}, {322.0, 350.0}, {330.0, 280.0},
       {350.0, 210.0}, {385.0, 140.0}, {435.0, 70.0},
@@ -120,7 +125,7 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
   vision_core::Features curve_features;
   for (int frame = 0; frame < 10; ++frame) {
     curve_features = vision_core::ComputeLineFeatures(
-        curve_points, 640, 480, false, 0.0, 0.0, {}, &state);
+        curve_points, 640, 480, false, 0.0, 0.0, config, &state);
   }
   assert(state.filtered_curve_score > 0.1);
   assert(curve_features.u_err_lookahead > 0.0);
@@ -130,7 +135,7 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
       {320.0, 420.0}, {250.0, 260.0}, {180.0, 100.0},
   };
   vision_core::ComputeLineFeatures(
-      sparse_points, 640, 480, false, 0.0, 0.0, {}, &state);
+      sparse_points, 640, 480, false, 0.0, 0.0, config, &state);
   assert(state.filtered_curve_score < before_sparse);
   assert(state.filtered_curve_score > before_sparse * 0.90);
 }

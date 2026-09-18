@@ -37,74 +37,73 @@ enum class BallActionRequest {
 };
 
 struct BallConfig {
-  int stable_window{10};
-  int stable_min_hits{7};
-  int lost_frames{5};
-  double smooth_alpha{0.45};
-  double far_u_des_norm{0.50};
+  int stable_window{};
+  int stable_min_hits{};
+  int lost_frames{};
+  double smooth_alpha{};
+  double far_u_des_norm{};
   // Temporary compatibility fallback for callers that do not provide the
   // continuously-computed line vx.  New callers use far_speed_scale only.
-  double far_vx{0.35};
-  double far_vx_min{0.10};
-  double far_wz_max{0.80};
-  double far_heading_gain{2.50};
-  double far_slow_by_turn{0.60};
-  double far_dv_max{0.12};
-  double far_dw_max{0.35};
-  double far_speed_scale{0.75};
+  double far_vx{};
+  double far_vx_min{};
+  double far_wz_max{};
+  double far_heading_gain{};
+  double far_slow_by_turn{};
+  double far_dv_max{};
+  double far_dw_max{};
+  double far_speed_scale{};
   // 아래쪽 노이즈만으로 공 미션이 시작되지 않도록, 먼저 이 경계보다
   // 위에서 stable_window/stable_min_hits만큼 안정적으로 보여야 한다.
-  double upper_acquire_v_norm{0.65};
-  double tilt_down_v_norm{0.65};
-  int tilt_down_window{10};
-  int tilt_down_min_hits{6};
+  double upper_acquire_v_norm{};
+  double tilt_down_v_norm{};
+  int tilt_down_window{};
+  int tilt_down_min_hits{};
   // Retained for source compatibility. The transition now depends only on the
   // rolling center-v hit history, not bbox height.
-  double tilt_down_h_norm{0.18};
-  double camera_tilt_duration_sec{0.50};
-  double camera_settle_sec{0.25};
-  double camera_return_duration_sec{0.50};
-  double camera_motion_timeout_sec{3.0};
-  int hold_cmd_window{5};
-  double hold_vx_min{0.15};
-  double hold_vx_max{0.25};
-  double hold_wz_max{0.25};
-  double hold_default_vx{0.18};
-  double tilt_walk_speed_scale{0.50};
-  double tilt_walk_vx_max{0.25};
+  double tilt_down_h_norm{};
+  double camera_tilt_duration_sec{};
+  double camera_settle_sec{};
+  double camera_return_duration_sec{};
+  double camera_motion_timeout_sec{};
+  int hold_cmd_window{};
+  double hold_vx_min{};
+  double hold_vx_max{};
+  double hold_wz_max{};
+  double hold_default_vx{};
+  double tilt_walk_speed_scale{};
+  double tilt_walk_vx_max{};
   // 실제 미세걸음/집기/확인/일어나기 모션이 연결되기 전의 임시 동작이다.
   // 미세조정은 저속 직진으로, 나머지는 정지 명령과 시간 경과로 대신한다.
-  double fine_adjust_placeholder_vx{0.1};
-  // 카메라 하향 완료 뒤 임시 정밀 전진을 기존 1.0초에서 0.5초 늘렸다.
-  double fine_adjust_placeholder_duration_sec{1.5};
-  double pickup_placeholder_duration_sec{3.0};
-  double pickup_verification_placeholder_sec{0.0};
-  double stand_up_placeholder_sec{0.0};
-  int pickup_max_attempts{3};
+  double fine_adjust_placeholder_vx{};
+  double fine_adjust_placeholder_duration_sec{};
+  double pickup_placeholder_duration_sec{};
+  double pickup_verification_placeholder_sec{};
+  double stand_up_placeholder_sec{};
+  int pickup_max_attempts{};
   // VERIFY_PICKUP 동작이 끝난 뒤 공이 이 프레임 수만큼 연속으로 보이지
   // 않으면 손에 들어온 것으로 판단한다. 보이는 경우에는 stable_window /
   // stable_min_hits 판정을 통과해야 재집기를 시도한다.
-  int pickup_success_missing_frames{5};
-  double post_pickup_back_away_vx{-0.10};
-  double post_pickup_back_away_sec{1.0};
-  double rl_stop_duration_sec{1.50};
-  double ball_ignore_duration_sec{10.0};
-  double near_target_u_norm{0.50};
-  double near_target_v_norm{0.70};
-  double near_kx{0.50};
-  double near_ky{0.45};
-  double near_wz_gain{0.80};
-  double near_vx_max{0.18};
-  double near_vy_max{0.15};
-  double near_wz_max{0.50};
-  double near_x_tol{0.06};
-  double near_y_tol{0.06};
-  bool near_use_lateral{true};
-  double recovery_timeout_sec{2.0};
-  int recovery_reacquire_min_hits{3};
-  double recovery_center_tolerance_norm{0.12};
-  double recovery_forward_vx{0.10};
-  double recovery_turn_wz{0.25};
+  int pickup_success_missing_frames{};
+  double post_pickup_back_away_vx{};
+  double post_pickup_back_away_sec{};
+  double rl_stop_duration_sec{};
+  double ball_ignore_duration_sec{};
+  double near_target_u_norm{};
+  double near_target_v_norm{};
+  double near_kx{};
+  double near_ky{};
+  double near_wz_gain{};
+  double near_vx_max{};
+  double near_vy_max{};
+  double near_wz_max{};
+  double near_x_tol{};
+  double near_y_tol{};
+  bool near_use_lateral{};
+  double recovery_timeout_sec{};
+  int recovery_reacquire_min_hits{};
+  double recovery_center_tolerance_norm{};
+  double recovery_forward_vx{};
+  double recovery_turn_wz{};
 };
 
 struct TrackedBall {
@@ -133,7 +132,8 @@ struct BallResult {
 
 class BallController {
 public:
-  explicit BallController(const BallConfig &config = BallConfig{});
+  BallController();
+  explicit BallController(const BallConfig &config);
   BallResult Compute(const std::optional<ObjectTarget> &ball_target,
                      int image_width, int image_height, double now_sec);
   // Compatibility overload: uses timed camera feedback and the caller's line

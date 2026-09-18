@@ -314,6 +314,40 @@ typedef struct VisionControlCommand {
   int camera_request;
 } VisionControlCommand;
 
+typedef enum VisionActionCategory {
+  VISION_ACTION_CATEGORY_NONE = 0,
+  VISION_ACTION_CATEGORY_MISSION = 1,
+  VISION_ACTION_CATEGORY_LOCOMOTION = 2
+} VisionActionCategory;
+
+typedef enum VisionActionExecutionKind {
+  VISION_ACTION_EXECUTION_NONE = 0,
+  VISION_ACTION_EXECUTION_VELOCITY_COMPATIBLE = 1,
+  VISION_ACTION_EXECUTION_DISCRETE = 2,
+  VISION_ACTION_EXECUTION_STATIONARY = 3
+} VisionActionExecutionKind;
+
+// 기존 VisionControlCommand ABI는 그대로 유지하고, 공통 실행기 어댑터에
+// 필요한 PRE-P2P 속도와 실행 정책은 확장 결과에서만 노출한다.
+typedef struct VisionControlCommandV3 {
+  int command_type;
+  int mission;
+  int mission_phase;
+  int control_phase;
+  double vx;
+  double vy;
+  double wz;
+  double pre_p2p_vx;
+  double pre_p2p_vy;
+  double pre_p2p_wz;
+  int action;
+  uint64_t action_id;
+  int action_category;
+  int action_execution_kind;
+  double action_yaw_rad;
+  int camera_request;
+} VisionControlCommandV3;
+
 VisionControlCommandCoordinatorHandle
 vision_control_command_coordinator_create(void);
 void vision_control_command_coordinator_destroy(
@@ -325,6 +359,12 @@ VisionControlCommand vision_control_command_compute(
     double line_wz, uint64_t feedback_action_id, int action_acknowledged,
     int action_done);
 VisionControlCommand vision_control_command_compute_v2(
+    VisionControlCommandCoordinatorHandle handle,
+    VisionBallResult ball_result, VisionHurdleResult hurdle_result,
+    VisionGoalResult goal_result, int ball_has_ball,
+    double line_vx, double line_vy, double line_wz,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done);
+VisionControlCommandV3 vision_control_command_compute_v3(
     VisionControlCommandCoordinatorHandle handle,
     VisionBallResult ball_result, VisionHurdleResult hurdle_result,
     VisionGoalResult goal_result, int ball_has_ball,

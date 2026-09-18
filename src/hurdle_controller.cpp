@@ -3,6 +3,8 @@
 
 #include "vision_core/hurdle_controller.hpp"
 
+#include "vision_core/config_loader.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -11,6 +13,9 @@ namespace {
 constexpr double kTimeEpsilon = 1e-9;
 double SafeDenominator(double value) { return std::max(value, 1e-6); }
 } // namespace
+
+HurdleController::HurdleController()
+    : HurdleController(LoadDefaultAlgorithmConfig().hurdle) {}
 
 HurdleController::HurdleController(const HurdleConfig &config)
     : config_(config) {}

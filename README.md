@@ -18,8 +18,8 @@
 - YOLO 검출 결과를 공통 코어 자료형으로 변환
 - 화면 표시와 진단 로그
 - 코어가 선택한 통합 명령을 속도·액션·카메라 ROS2 명령으로 분배
-- `/g1_vision/cmd_vel`, `/g1_vision/action_cmd`,
-  `/g1_vision/camera_cmd` 토픽 발행
+- `/jandi_vision/cmd_vel`, `/jandi_vision/action_cmd`,
+  `/jandi_vision/camera_cmd` 토픽 발행
 - 액션·카메라 명령의 `ACK`/`DONE` 상태 토픽 수신
 
 ### 공통 `vision_core`
@@ -45,6 +45,37 @@ G1은 Python `ctypes` 연결층을 통해 같은
 현재 G1의 점선 계산은 코어에 연결되어 있다. PID 경기장 실행에서는 현재 순번의
 농구공 하나를 가상 카메라 bbox로 만들어 공 C API에도 전달한다. 골대·허들
 컨트롤러와 C API는 준비됐지만 G1 경기장 객체/bbox 입력 생성은 아직 연결 전이다.
+
+## 공통 알고리즘 설정
+
+`config/vision_algorithm.yaml`이 실제 ROS 비전과 시뮬레이터가 공유하는
+알고리즘 기준값의 단일 원본이다. 설치하면
+`share/shared_vision_core/config/vision_algorithm.yaml`로 복사되며,
+`MissionController`와 ROS `line_perception_node`가 자동으로 읽는다.
+알고리즘 Config 구조체는 값 전달용이며 숫자 기본값을 중복 보관하지
+않는다. 공통 YAML이 없거나 필수 키/타입이 잘못되면 0 기본값으로
+계속하지 않고 시작 시 실패한다.
+
+실행 시 우선순위는 `공통 YAML < ROS params-file < ROS CLI -p`다. 따라서
+공통 값을 바꿀 때는 YAML을 수정하고 core를 다시 install하면 되며,
+일회성 실험은 기존처럼 `ros2 run ... --ros-args -p 이름:=값`으로
+덮어쓴다. 다른 공통 YAML을 시험하려면
+두 환경 모두 다음 변수로 같은 파일을 지정한다.
+
+```bash
+export VISION_CORE_ALGORITHM_CONFIG=/절대/경로/vision_algorithm.yaml
+```
+
+ROS 토픽, 화면 출력, 시뮬레이션 피드백 같은 어댑터 전용 값은
+`vision/config/vision_params.yaml`에 따로 둔다. YOLO 모델 경로는 기존
+`vision/config/yolo26_runtime.yaml`의 PC/Jetson 선택 규칙을 그대로 사용한다.
+
+`object_association` 설정은 ball, backboard, hurdle의 클래스별 tracker에
+사용된다. confidence는 후보 threshold에만 사용하고, 연결 점수는
+이전 중심의 영상 대각선 정규화 거리와 width/height의 대칭 log-ratio
+변화만 사용한다. 검출이 비면 identity는 `missing_frame_limit` 동안 보존하지만,
+이전 bbox를 현재 검출로 controller에 전달하지는 않는다. goal 클래스는
+이 tracker 대상이 아니다.
 
 ## 실제 비전 노드의 처리 순서
 
@@ -80,11 +111,11 @@ G1은 Python `ctypes` 연결층을 통해 같은
 보관한다. ROS2 `vision` 패키지는 이를 실행 특성에 따라 다음처럼 분배한다.
 
 ```text
-/g1_vision/cmd_vel        geometry_msgs/Twist       매 추론 프레임 발행
-/g1_vision/action_cmd     vision/ActionCommand      ACK 전까지 동일 ID 재발행
-/g1_vision/action_status  vision/CommandStatus      ACK/DONE 수신
-/g1_vision/camera_cmd     vision/CameraCommand      ACK 전까지 동일 ID 재발행
-/g1_vision/camera_status  vision/CommandStatus      ACK/DONE 수신
+/jandi_vision/cmd_vel        geometry_msgs/Twist       매 추론 프레임 발행
+/jandi_vision/action_cmd     vision/ActionCommand      ACK 전까지 동일 ID 재발행
+/jandi_vision/action_status  vision/CommandStatus      ACK/DONE 수신
+/jandi_vision/camera_cmd     vision/CameraCommand      ACK 전까지 동일 ID 재발행
+/jandi_vision/camera_status  vision/CommandStatus      ACK/DONE 수신
 ```
 
 액션 실행 중에는 속도 토픽에 `0,0,0`을 계속 발행한다. 접근 보행에서 액션으로
@@ -94,9 +125,10 @@ ROS 파라미터 `rl_stop_duration_sec`로 바꾼다. 이후 ACTION을 같은 `a
 ACK까지 반복하고, ACK 뒤에는 DONE까지 HOLD한다. DONE을 받은 다음 프레임부터
 해당 미션 controller가 다음 판단을 이어간다.
 
-기존 C++/C API 호출자는 호환을 위해 설정 시간 기반 placeholder를 계속 사용한다.
-실제 ACK/DONE 경로는 `ActionExecutionFeedback.enabled=true`를 전달하는 ROS2
-연결에서만 활성화된다.
+기존 직접 controller 호출자는 호환을 위해 설정 시간 기반 placeholder를 계속
+사용할 수 있다. `MissionController` 호출자는 `command_transport_enabled=true`로
+실행기 사용을 알리고 `CommandDeliveryFeedback`의 동일 `action_id` ACK/DONE만
+반환한다. controller용 완료 신호는 MissionController가 내부에서 라우팅한다.
 
 `MissionController`가 전체 미션의 단일 진입점이다. ROS 노드는 각 객체
 controller를 직접 호출하거나 `StartAfterPickup()`, `Reset()`, 우선순위 판단을
@@ -173,9 +205,9 @@ vision_core/
 
 ## 선택형 보행 backend
 
-`ControlCommandConfig::locomotion_backend`의 기본값은 기존과 같은
-`kVelocity`다. 따라서 설정하지 않은 기존 C++/C/ROS 호출자는 계속
-`vx/vy/wz`를 받고 동작이 바뀌지 않는다.
+인자 없는 `MissionController`와 `ControlCommandCoordinator`는 설치된
+`vision_algorithm.yaml`을 읽으며, 현재 공통 기본값은 `p2p`다. 명시적인
+`ControlCommandConfig`를 넘기는 호출자는 그 설정을 그대로 사용한다.
 
 `kP2pAction`을 선택하면 각 controller와 MissionController의 속도 계산은 그대로
 두고, 최종 선택된 `MotionCommand`만 `P2pMotionQuantizer`를 통과한다.
@@ -189,9 +221,14 @@ controller의 mission action_request 존재
 ```
 
 기본 P2P primitive는 2/6걸음 직진, 2/6걸음 좌·우 곡선 전진, 2걸음
-후진/횡이동, 좌·우 제자리 회전이다. 현재 임계값은 초기 구조값이며 실제 P2P
-모션 이동량에 맞춰 `P2pMotionConfig`에서 조정한다. 유한하지 않은 속도나 모든
-축이 deadband 안인 명령은 새 액션을 만들지 않고 HOLD한다.
+후진/횡이동, 좌·우 제자리 회전이다. quantizer는 최종 `mission + phase`로
+Normal/Fine/Recovery 프로필을 먼저 고르고 각 프로필의 임계값으로 속도를
+양자화한다. LINE과 일반 접근은 Normal, 근접 접근·미세조정은 Fine,
+탐색·유실복구·라인 재획득은 Recovery다. Fine/Recovery 기본값은 매 2걸음 뒤
+다시 관측하도록 긴 6걸음 선택 임계값을 높여 두었다. 실제 P2P 모션 이동량에
+맞춰 `P2pMotionConfig` 또는 ROS의 `p2p_fine_*`, `p2p_recovery_*` 파라미터를
+조정한다. 유한하지 않은 속도나 모든 축이 deadband 안인 명령은 새 액션을
+만들지 않고 HOLD한다.
 
 Mission 액션과 Locomotion 액션은 한 실행기에서 직렬 실행되지만 생명주기는
 분리된다. Mission 액션은 DONE 뒤 controller가 요청을 해제할 때까지 같은 액션을
@@ -199,13 +236,24 @@ Mission 액션과 Locomotion 액션은 한 실행기에서 직렬 실행되지�
 같은 primitive가 필요하면 새 `action_id`로 즉시 반복할 수 있다. 이미 ACK된
 동작은 중간에 교체하지 않으며 pending 동작의 DONE 뒤 Mission 요청을 우선한다.
 
+`ControlCommand`는 최종 출력인 `action`과 양자화 전 연속속도인
+`pre_p2p_motion`을 동시에 보존한다. ROS 실행기는 기존과 같이 `action`만
+발행한다. MuJoCo 실행기 어댑터는 `action_execution_kind`가
+`kVelocityCompatible`이면 같은 `action_id`를 활성 상태로 유지하면서
+`pre_p2p_motion`을 RL 보행기에 전달할 수 있다. `kDiscrete`는 집기·허들·슛처럼
+시뮬레이터 구현 또는 정지 후 DONE 모사가 필요한 동작이고,
+`kStationary`는 정지 관측 동작이다. 어느 방식을 선택해도 어댑터는 core 상태를
+직접 바꾸지 않고 해당 `action_id`의 ACK/DONE만 다음 프레임에 반환한다.
+
 `ControlCommand.action_category`는 송신부 내부의 피드백 라우팅 정보다. ROS
 메시지에 category를 추가하지 않고, 외부 실행 코드는 서로 겹치지 않는 `action`
 코드와 `action_id`로 동작을 식별한다. P2P action 코드 15~25는 ROS
 `ActionCommand.msg`에도 같은 값으로 정의돼 있다. ROS에서
-`locomotion_backend:=p2p`를 선택하면 `/cmd_vel`을 발행하지 않고 보행과 미션을
-모두 `/g1_vision/action_cmd`로 보낸다. 기본값 `velocity`에서는 기존 동작을
-그대로 유지한다.
+ROS `line_perception_node`의 기본 backend는 `p2p`이며 `/cmd_vel`을 발행하지 않고
+보행과 미션을 모두 `/jandi_vision/action_cmd`로 보낸다. 기존 ROS 메시지의
+필드와 action 번호는 변경하지 않았다. C 호출자는 기존 ABI의 v1/v2를 계속 쓸 수
+있고, MuJoCo 어댑터는 `vision_control_command_compute_v3()`에서 PRE-P2P 속도와
+실행 정책을 함께 받을 수 있다.
 
 ```bash
 ros2 run vision line_perception_node --ros-args \

@@ -1,7 +1,9 @@
-// 처리 순서: 공 집기 완료 뒤 전체 골대로 접근하고, 백보드 RGB-D 자세로 미세정렬한 뒤 라인에 복귀한다.
+// 처리 순서: 공 집기 완료 뒤 거리 검증된 백보드로 접근하고, 백보드 RGB-D 자세로 미세정렬한 뒤 라인에 복귀한다.
 // 실제 슛 모션은 외부 모션 패키지의 역할이며, 현재는 정렬 뒤 2초 정지로 대체한다.
 
 #include "vision_core/goal_controller.hpp"
+
+#include "vision_core/config_loader.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +25,9 @@ double WrapAngle(double angle) {
   return angle;
 }
 } // namespace
+
+GoalController::GoalController()
+    : GoalController(LoadDefaultAlgorithmConfig().goal) {}
 
 GoalPoseObservation EstimateGoalPoseFromEdgeDepths(
     double left_u_px, double left_depth_m, double right_u_px,
@@ -51,6 +56,25 @@ GoalPoseObservation EstimateGoalPoseFromEdgeDepths(
   observation.yaw_rad =
       std::atan2(left_depth_m - right_depth_m, width_x);
   observation.confidence = confidence;
+  return observation;
+}
+
+GoalPoseObservation EstimateGoalPoseFromBackboardDepths(
+    double center_u_px, double center_depth_m, double left_u_px,
+    double left_depth_m, double right_u_px, double right_depth_m,
+    const Intrinsics &intrinsics, double confidence) {
+  GoalPoseObservation observation = EstimateGoalPoseFromEdgeDepths(
+      left_u_px, left_depth_m, right_u_px, right_depth_m, intrinsics,
+      confidence);
+  if (!observation.valid || !std::isfinite(center_u_px) ||
+      !std::isfinite(center_depth_m) || center_depth_m <= 0.0 ||
+      !std::isfinite(intrinsics.fx) ||
+      std::abs(intrinsics.fx) <= kGeometryEpsilon) {
+    return {};
+  }
+  observation.x_m =
+      (center_u_px - intrinsics.cx) * center_depth_m / intrinsics.fx;
+  observation.z_m = center_depth_m;
   return observation;
 }
 
@@ -110,11 +134,12 @@ void GoalController::UpdateBallState(const BallResult &ball_result) {
 }
 
 GoalResult GoalController::Compute(
-    const std::optional<ObjectTarget> &goal_target, int image_width,
+    const std::optional<ObjectTarget> &tracking_target, int image_width,
     int image_height, double now_sec, bool line_reference_valid,
     const CameraFeedback &camera_feedback) {
-  return Compute(goal_target, std::nullopt, GoalPoseObservation{}, image_width,
-                 image_height, now_sec, line_reference_valid, camera_feedback);
+  return Compute(std::nullopt, tracking_target, GoalPoseObservation{},
+                 image_width, image_height, now_sec, line_reference_valid,
+                 camera_feedback);
 }
 
 GoalResult GoalController::Compute(
@@ -135,18 +160,13 @@ GoalResult GoalController::Compute(
     double now_sec, bool line_reference_valid,
     const CameraFeedback &camera_feedback,
     const ActionExecutionFeedback &action_feedback) {
-  // SEARCH 진입은 전체 골대 검출로만 결정한다. 다만 한 번 APPROACH에
-  // 들어간 뒤 전체 형상이 화면 밖으로 잘려도, 내부 백보드 bbox가 남아
-  // 있으면 그 중심을 대신 추적하여 접근을 계속한다.
-  const bool may_track_backboard =
-      mode_ == GoalMode::kApproach || mode_ == GoalMode::kFineAdjust;
-  const auto &approach_target =
-      (!goal_target && may_track_backboard) ? backboard_target : goal_target;
-  UpdateGoalTracker(approach_target, image_width, image_height);
+  // 5-class 모델의 goal 출력은 호환을 위해 입력으로 유지하지만 골대 미션의
+  // 진입·검색·접근은 거리 검증을 통과한 backboard만 사용한다.
+  (void)goal_target;
+  UpdateGoalTracker(backboard_target, image_width, image_height);
   UpdatePoseTracker(backboard_target, goal_pose);
-  // 공을 실제로 들고 라인을 걷는 중에 전체 골대가 안정 검출되었을 때만
-  // 골대 미션을 잠근다. 골대 bbox만 보이거나 공 보유 상태만 켜진 것으로는
-  // 진입하지 않는다.
+  // 공을 실제로 들고 라인을 걷는 중에 거리 검증된 백보드가 연속 프레임
+  // 조건을 만족했을 때 골대 미션을 잠근다.
   if (mode_ == GoalMode::kLineFollow && has_ball_ && goal_entry_armed_ &&
       tracked_.stable && tracked_.visible) {
     mode_ = GoalMode::kPostPickupWait;
@@ -156,6 +176,11 @@ GoalResult GoalController::Compute(
   result.mode = mode_;
   result.tracked = tracked_;
   result.pose = tracked_pose_;
+  // 디버그 화면에서도 미세조정 중 예상 회전각을 확인할 수 있게 안정된
+  // pose가 있으면 실시간 계산값을 제공한다. SHOOT 진입 시에는 아래에서
+  // 같은 값을 latch한다.
+  result.shoot_yaw_rad =
+      tracked_pose_.visible ? ComputeShootYawRad() : shoot_yaw_rad_;
 
   switch (mode_) {
   case GoalMode::kLineFollow:
@@ -314,8 +339,10 @@ GoalResult GoalController::Compute(
         FineAdjustSettled(now_sec)) {
       mode_ = GoalMode::kShoot;
       state_enter_sec_ = now_sec;
+      shoot_yaw_rad_ = ComputeShootYawRad();
       result.mode = mode_;
       result.action_request = GoalActionRequest::kShoot;
+      result.shoot_yaw_rad = shoot_yaw_rad_;
       result.command = {};
       ResetFineMotion();
       return result;
@@ -332,6 +359,7 @@ GoalResult GoalController::Compute(
   case GoalMode::kShoot:
     result.active = true;
     result.action_request = GoalActionRequest::kShoot;
+    result.shoot_yaw_rad = shoot_yaw_rad_;
     result.command = {};
     if ((action_feedback.enabled && action_feedback.action_done) ||
         (!action_feedback.enabled &&
@@ -490,52 +518,24 @@ MotionCommand GoalController::ComputeApproachCommand() const {
 
 MotionCommand GoalController::MakeFineAdjustPulse() const {
   MotionCommand command;
-  const double yaw_error =
-      WrapAngle(tracked_pose_.yaw_rad - config_.target_yaw_rad);
-  // my_cv의 기존 식:
-  // x' = backboard_x + hoop_radius * sin(yaw)
-  // z' = backboard_z - hoop_radius * cos(yaw) - throwing_range
-  const double x_error =
+  const double rim_x =
       tracked_pose_.x_m + config_.hoop_radius_m *
                                 std::sin(tracked_pose_.yaw_rad);
-  const double z_error =
+  const double rim_z =
       tracked_pose_.z_m - config_.hoop_radius_m *
-                                std::cos(tracked_pose_.yaw_rad) -
-      config_.throwing_range_m;
+                                std::cos(tracked_pose_.yaw_rad);
+  const double distance_error =
+      std::hypot(rim_x, rim_z) - config_.throwing_range_m;
 
-  // yaw가 틀어진 동안에는 회전만 한다. yaw가 허용 범위에 들어온 뒤에는
-  // 회전을 섞지 않고 전후/좌우 평행이동으로 위치만 맞춘다.
-  if (std::abs(yaw_error) > std::abs(config_.yaw_tolerance_rad)) {
-    command.wz = Clamp(-config_.fine_wz_gain * yaw_error,
-                       -std::abs(config_.fine_wz_max),
-                       std::abs(config_.fine_wz_max));
-    if (std::abs(command.wz) < std::abs(config_.fine_wz_min)) {
-      command.wz = std::copysign(std::abs(config_.fine_wz_min), command.wz);
-    }
-    return command;
-  }
-  const double position_tolerance = std::abs(config_.position_tolerance_m);
-  // yaw 정렬 뒤에는 x/z를 동시에 움직이지 않고, 현재 오차가 더 큰 축 하나만
-  // 먼저 줄인다. 허용범위 안의 축도 고정하지 않아 다시 틀어지면 재조정한다.
-  if (std::abs(z_error) >= std::abs(x_error)) {
-    command.vx = Clamp(config_.fine_vx_gain * z_error,
-                       -std::abs(config_.fine_vx_max),
-                       std::abs(config_.fine_vx_max));
-    if (std::abs(z_error) > position_tolerance &&
-        std::abs(command.vx) < std::abs(config_.fine_translation_min)) {
-      command.vx = std::copysign(
-          std::abs(config_.fine_translation_min), z_error);
-    }
-  } else {
-    // 카메라 오른쪽에 있으면 몸은 오른쪽으로 가야 하므로 body-y(+좌측)에는 음수다.
-    command.vy = Clamp(-config_.fine_vy_gain * x_error,
-                       -std::abs(config_.fine_vy_max),
-                       std::abs(config_.fine_vy_max));
-    if (std::abs(x_error) > position_tolerance &&
-        std::abs(command.vy) < std::abs(config_.fine_translation_min)) {
-      command.vy = std::copysign(
-          std::abs(config_.fine_translation_min), -x_error);
-    }
+  // 림을 완전히 정면에 두는 횡이동/회전 대신 투척 가능 거리만 맞춘다.
+  // 최종 림 방향 회전은 SHOOT action 실행기가 shoot_yaw_rad로 수행한다.
+  command.vx = Clamp(config_.fine_vx_gain * distance_error,
+                     -std::abs(config_.fine_vx_max),
+                     std::abs(config_.fine_vx_max));
+  if (std::abs(distance_error) > std::abs(config_.position_tolerance_m) &&
+      std::abs(command.vx) < std::abs(config_.fine_translation_min)) {
+    command.vx = std::copysign(std::abs(config_.fine_translation_min),
+                               distance_error);
   }
   return command;
 }
@@ -568,14 +568,14 @@ MotionCommand GoalController::ComputeFineAdjustCommand(double now_sec) {
   fine_pulse_command_ = MakeFineAdjustPulse();
   const bool translation = std::abs(fine_pulse_command_.vx) > 0.0 ||
                            std::abs(fine_pulse_command_.vy) > 0.0;
-  const double x_error =
+  const double rim_x =
       tracked_pose_.x_m + config_.hoop_radius_m * std::sin(tracked_pose_.yaw_rad);
-  const double z_error = tracked_pose_.z_m -
-                         config_.hoop_radius_m * std::cos(tracked_pose_.yaw_rad) -
-                         config_.throwing_range_m;
+  const double rim_z = tracked_pose_.z_m -
+                       config_.hoop_radius_m * std::cos(tracked_pose_.yaw_rad);
+  const double distance_error =
+      std::hypot(rim_x, rim_z) - config_.throwing_range_m;
   const bool near_target = translation &&
-      std::max(std::abs(x_error), std::abs(z_error)) <=
-          std::abs(config_.fine_near_error_m);
+      std::abs(distance_error) <= std::abs(config_.fine_near_error_m);
   fine_pulse_duration_sec_ = std::max(
       0.0, near_target ? config_.fine_near_pulse_duration_sec
                        : config_.fine_pulse_duration_sec);
@@ -609,17 +609,29 @@ bool GoalController::PoseReadyForFineAdjust() const {
 
 bool GoalController::PoseAligned() const {
   if (!tracked_pose_.visible) return false;
-  const double x_error =
+  const double rim_x =
       tracked_pose_.x_m + config_.hoop_radius_m *
                                 std::sin(tracked_pose_.yaw_rad);
-  const double z_error =
+  const double rim_z =
       tracked_pose_.z_m - config_.hoop_radius_m *
-                                std::cos(tracked_pose_.yaw_rad) -
-      config_.throwing_range_m;
-  return std::hypot(x_error, z_error) <=
-             std::abs(config_.position_tolerance_m) &&
-         std::abs(WrapAngle(tracked_pose_.yaw_rad - config_.target_yaw_rad)) <=
-             std::abs(config_.yaw_tolerance_rad);
+                                std::cos(tracked_pose_.yaw_rad);
+  return std::abs(std::hypot(rim_x, rim_z) - config_.throwing_range_m) <=
+         std::abs(config_.position_tolerance_m);
+}
+
+double GoalController::ComputeShootYawRad() const {
+  const double rim_x =
+      tracked_pose_.x_m + config_.hoop_radius_m *
+                                std::sin(tracked_pose_.yaw_rad);
+  const double rim_z =
+      tracked_pose_.z_m - config_.hoop_radius_m *
+                                std::cos(tracked_pose_.yaw_rad);
+  if (!std::isfinite(rim_x) || !std::isfinite(rim_z) ||
+      std::hypot(rim_x, rim_z) <= kGeometryEpsilon) {
+    return 0.0;
+  }
+  // 카메라 x는 오른쪽(+), 로봇 yaw는 좌회전(+)이므로 부호를 반대로 한다.
+  return WrapAngle(-std::atan2(rim_x, rim_z));
 }
 
 void GoalController::ClearTracking() {
@@ -641,6 +653,7 @@ void GoalController::Reset() {
   has_ball_ = false;
   ball_consumed_ = false;
   goal_entry_armed_ = false;
+  shoot_yaw_rad_ = 0.0;
   ResetFineMotion();
   ClearTracking();
 }

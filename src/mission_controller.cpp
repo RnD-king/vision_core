@@ -1,12 +1,24 @@
 #include "vision_core/mission_controller.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+#include "vision_core/config_loader.hpp"
+#include "vision_core/coordinate_rectifier.hpp"
+
 namespace vision_core {
+MissionController::MissionController()
+    : MissionController(LoadDefaultAlgorithmConfig()) {}
 
 MissionController::MissionController(const MissionControllerConfig &config)
     : config_(config),
       line_controller_(config.line, config.line_observation_dt),
       ball_controller_(config.ball), hurdle_controller_(config.hurdle),
       goal_controller_(config.goal), command_coordinator_(config.command),
+      ball_association_tracker_(config.object_association),
+      backboard_association_tracker_(config.object_association),
+      hurdle_association_tracker_(config.object_association),
       has_ball_(config.initial_has_ball) {
   if (has_ball_) goal_controller_.StartAfterPickup(0.0);
 }
@@ -40,7 +52,6 @@ void MissionController::EnterMission(MissionType mission) {
     hurdle_result_ = {};
     goal_result_ = {};
   } else if (mission == MissionType::kHurdle) {
-    ball_controller_.Reset();
     goal_controller_.Reset();
     ball_result_ = {};
     goal_result_ = {};
@@ -61,6 +72,20 @@ void MissionController::FinishMission() {
 MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
   MissionFrameResult output;
   bool line_reference_valid = false;
+  ActionExecutionFeedback action_feedback = input.action_feedback;
+  if (input.command_transport_enabled) {
+    const bool pending_mission_action =
+        last_command_.action_id != 0 &&
+        last_command_.action_category == ActionCategory::kMission;
+    const bool matching_feedback =
+        pending_mission_action && input.delivery_feedback.action_id != 0 &&
+        input.delivery_feedback.action_id == last_command_.action_id;
+    action_feedback.enabled = true;
+    action_feedback.action_done =
+        matching_feedback && input.delivery_feedback.done;
+    action_feedback.action_active =
+        pending_mission_action && !action_feedback.action_done;
+  }
 
   const auto compute_line = [&]() {
     const Features features = ComputeLineFeatures(
@@ -89,7 +114,7 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
             input.goal_target, input.backboard_target, input.goal_pose,
             input.image_width, input.image_height, input.now_sec,
             line_reference_valid, input.camera_feedback,
-            input.action_feedback);
+            action_feedback);
         if (goal_result_.mode != GoalMode::kLineFollow) {
           EnterMission(MissionType::kGoal);
         }
@@ -99,23 +124,18 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
         hurdle_result_ = hurdle_controller_.Compute(
             input.hurdle_target, input.image_width, input.image_height,
             input.now_sec, output.line_command.vx, line_reference_valid,
-            input.camera_feedback, input.action_feedback);
+            input.camera_feedback, action_feedback);
         if (hurdle_result_.mode != HurdleMode::kLineFollow) {
           EnterMission(MissionType::kHurdle);
           break;
         }
       }
 
-      // 허들이 한 프레임이라도 현재 보이는 동안에는 안전 우선순위상 Ball
-      // 진입 이력을 진행하지 않는다.
-      if (config_.enable_ball && config_.enable_hurdle &&
-          input.hurdle_target.has_value()) {
-        ball_controller_.ClearEntryEvidence();
-      } else if (config_.enable_ball) {
+      if (config_.enable_ball) {
         ball_result_ = ball_controller_.Compute(
             input.ball_target, input.image_width, input.image_height,
             input.now_sec, output.line_command.vx, line_reference_valid,
-            input.camera_feedback, input.action_feedback);
+            input.camera_feedback, action_feedback);
         if (ball_result_.mode != BallMode::kLineFollow) {
           EnterMission(MissionType::kBall);
         }
@@ -129,7 +149,7 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
     ball_result_ = ball_controller_.Compute(
         input.ball_target, input.image_width, input.image_height,
         input.now_sec, output.line_command.vx, line_reference_valid,
-        input.camera_feedback, input.action_feedback);
+        input.camera_feedback, action_feedback);
     has_ball_ = ball_result_.has_ball;
     if (previous_mode != BallMode::kPostPickupLineRecovery &&
         ball_result_.mode == BallMode::kPostPickupLineRecovery) {
@@ -148,9 +168,12 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
     hurdle_result_ = hurdle_controller_.Compute(
         input.hurdle_target, input.image_width, input.image_height,
         input.now_sec, 0.0, false, input.camera_feedback,
-        input.action_feedback);
+        action_feedback);
     if (hurdle_result_.mode == HurdleMode::kLineFollow &&
         !hurdle_result_.active) {
+      // 허들 진입 전의 공 후보가 허들을 넘은 직후 곧바로 Ball 미션을
+      // 활성화하지 않도록, 허들 미션을 완전히 마친 시점에만 지운다.
+      ball_controller_.ClearEntryEvidence();
       BeginLineReacquisition();
       FinishMission();
     }
@@ -162,7 +185,7 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
     goal_result_ = goal_controller_.Compute(
         input.goal_target, input.backboard_target, input.goal_pose,
         input.image_width, input.image_height, input.now_sec,
-        line_reference_valid, input.camera_feedback, input.action_feedback);
+        line_reference_valid, input.camera_feedback, action_feedback);
     has_ball_ = goal_controller_.HasBall();
     ball_controller_.SetHasBall(has_ball_);
     if (previous_mode != GoalMode::kHeadingRecovery &&
@@ -184,6 +207,7 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
   output.command = command_coordinator_.Compute(
       ball_result_, hurdle_result_, goal_result_, output.line_command,
       input.delivery_feedback);
+  last_command_ = output.command;
   output.active_mission = output.command.mission;
   output.ball = ball_result_;
   output.hurdle = hurdle_result_;
@@ -191,6 +215,154 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
   output.has_ball = has_ball_;
   output.line_in_recovery = line_controller_.InRecovery();
   output.line_features.in_recovery = output.line_in_recovery ? 1.0 : 0.0;
+  return output;
+}
+
+PerceptionMissionFrameResult
+MissionController::StepPerception(const PerceptionFrameInput &input) {
+  PerceptionMissionFrameResult output;
+  std::vector<Detection> detections;
+  detections.reserve(input.detections.size());
+  for (const auto &observation : input.detections) {
+    Detection detection = observation.detection;
+    if (detection.class_id == config_.object_targets.backboard_class_id) {
+      const double min_depth = std::max(
+          0.0, std::min(config_.backboard_min_depth_m,
+                        config_.backboard_max_depth_m));
+      const double max_depth = std::max(
+          min_depth, std::max(config_.backboard_min_depth_m,
+                              config_.backboard_max_depth_m));
+      const bool depth_valid = observation.center_depth_m.has_value() &&
+          std::isfinite(*observation.center_depth_m) &&
+          *observation.center_depth_m >= min_depth &&
+          *observation.center_depth_m <= max_depth;
+      if (!depth_valid) {
+        // 원본 index를 보존하면서 generic target selector가 이 후보를 고르지
+        // 않도록 confidence만 무효화한다.
+        detection.confidence = -std::numeric_limits<double>::infinity();
+      }
+    }
+    detections.push_back(detection);
+  }
+
+  output.perception.raw_line_centers =
+      ExtractLineCenters(detections, config_.line_detection);
+  output.perception.line_centers = output.perception.raw_line_centers;
+
+  ObjectTargetSelection selection;
+  const auto goal_candidates = ExtractObjectTargetCandidates(
+      detections, config_.object_targets.goal_class_id,
+      config_.object_targets.goal_confidence, config_.object_targets);
+  if (!goal_candidates.empty()) {
+    // goal은 tracker 대상이 아니므로 기존처럼 현재 프레임의 confidence가 가장
+    // 높은 후보를 고르고, 동률일 때만 bbox 면적을 사용한다.
+    const auto goal = std::max_element(
+        goal_candidates.begin(), goal_candidates.end(),
+        [](const ObjectTargetCandidate &lhs,
+           const ObjectTargetCandidate &rhs) {
+          if (lhs.target.confidence != rhs.target.confidence) {
+            return lhs.target.confidence < rhs.target.confidence;
+          }
+          return lhs.target.area_px < rhs.target.area_px;
+        });
+    selection.targets.goal = goal->target;
+    selection.indices.goal = goal->detection_index;
+  }
+  const auto ball_selection = ball_association_tracker_.Update(
+      ExtractObjectTargetCandidates(
+          detections, config_.object_targets.ball_class_id,
+          config_.object_targets.ball_confidence, config_.object_targets),
+      input.image_width, input.image_height);
+  const auto backboard_selection = backboard_association_tracker_.Update(
+      ExtractObjectTargetCandidates(
+          detections, config_.object_targets.backboard_class_id,
+          config_.object_targets.backboard_confidence,
+          config_.object_targets),
+      input.image_width, input.image_height);
+  const auto hurdle_selection = hurdle_association_tracker_.Update(
+      ExtractObjectTargetCandidates(
+          detections, config_.object_targets.hurdle_class_id,
+          config_.object_targets.hurdle_confidence, config_.object_targets),
+      input.image_width, input.image_height);
+  // goal class는 association tracker 대상이 아니다. 기존 selector 결과를
+  // 유지하고 ball/backboard/hurdle만 클래스별 tracker 결과로 교체한다.
+  selection.targets.ball = ball_selection.target;
+  selection.indices.ball = ball_selection.detection_index;
+  selection.targets.backboard = backboard_selection.target;
+  selection.indices.backboard = backboard_selection.detection_index;
+  selection.targets.hurdle = hurdle_selection.target;
+  selection.indices.hurdle = hurdle_selection.detection_index;
+  output.perception.targets = selection.targets;
+
+  const bool rectify = input.enable_imu_rectification && input.imu_valid;
+  if (rectify) {
+    output.perception.line_centers = RectifyPixelPoints(
+        output.perception.raw_line_centers, input.intrinsics, input.roll_rad,
+        input.pitch_rad);
+    const auto rectify_target = [&](std::optional<ObjectTarget> &target) {
+      if (!target) return;
+      const auto center = RectifyPixelPoints(
+          {target->center_px}, input.intrinsics, input.roll_rad,
+          input.pitch_rad);
+      if (!center.empty()) {
+        target->rectified_center_px = center.front();
+        target->center_rectified = true;
+      }
+    };
+    rectify_target(output.perception.targets.ball);
+    rectify_target(output.perception.targets.goal);
+    rectify_target(output.perception.targets.backboard);
+    rectify_target(output.perception.targets.hurdle);
+    output.perception.imu_rectification_applied = true;
+  }
+
+  if (selection.indices.backboard &&
+      *selection.indices.backboard < input.detections.size()) {
+    const auto &depth = input.detections[*selection.indices.backboard];
+    const auto &backboard = output.perception.targets.backboard;
+    output.perception.backboard_center_depth_m = depth.center_depth_m;
+    output.perception.backboard_left_depth_m = depth.left_depth_m;
+    output.perception.backboard_right_depth_m = depth.right_depth_m;
+    const bool goal_fine_phase =
+        active_mission_ == MissionType::kGoal &&
+        (goal_result_.mode == GoalMode::kRlStopping ||
+         goal_result_.mode == GoalMode::kFineAdjust ||
+         goal_result_.mode == GoalMode::kShoot);
+    const bool near_fine_distance =
+        depth.center_depth_m &&
+        *depth.center_depth_m <=
+            std::max(0.0, config_.goal.fine_adjust_start_z_m);
+    if (backboard && depth.center_depth_m && depth.left_depth_m &&
+        depth.right_depth_m && (near_fine_distance || goal_fine_phase)) {
+      const double center_u =
+          std::round(backboard->box_px.x + 0.5 * backboard->box_px.width);
+      const double left_u = std::round(backboard->box_px.x);
+      const double right_u =
+          std::round(backboard->box_px.x + backboard->box_px.width - 1.0);
+      output.perception.goal_pose = EstimateGoalPoseFromBackboardDepths(
+          center_u, *depth.center_depth_m, left_u, *depth.left_depth_m,
+          right_u, *depth.right_depth_m, input.intrinsics,
+          backboard->confidence);
+    }
+  }
+
+  MissionFrameInput prepared;
+  prepared.line_centers = output.perception.line_centers;
+  prepared.previous_vx = input.previous_vx;
+  prepared.previous_wz = input.previous_wz;
+  prepared.ball_target = output.perception.targets.ball;
+  prepared.hurdle_target = output.perception.targets.hurdle;
+  prepared.goal_target = output.perception.targets.goal;
+  prepared.backboard_target = output.perception.targets.backboard;
+  prepared.goal_pose = output.perception.goal_pose;
+  prepared.image_width = input.image_width;
+  prepared.image_height = input.image_height;
+  prepared.now_sec = input.now_sec;
+  prepared.camera_feedback = input.camera_feedback;
+  prepared.command_transport_enabled = input.command_transport_enabled;
+  prepared.action_feedback = input.action_feedback;
+  prepared.delivery_feedback = input.delivery_feedback;
+  output.mission = Step(prepared);
   return output;
 }
 
@@ -202,10 +374,14 @@ void MissionController::Reset() {
   hurdle_controller_.Reset();
   goal_controller_.Reset();
   command_coordinator_.Reset();
+  ball_association_tracker_.Reset();
+  backboard_association_tracker_.Reset();
+  hurdle_association_tracker_.Reset();
   line_feature_state_.Reset();
   ball_result_ = {};
   hurdle_result_ = {};
   goal_result_ = {};
+  last_command_ = {};
   if (has_ball_) goal_controller_.StartAfterPickup(0.0);
 }
 

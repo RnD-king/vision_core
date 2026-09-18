@@ -5,6 +5,8 @@
 
 #include "vision_core/line_velocity_controller.hpp"
 
+#include "vision_core/config_loader.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -20,7 +22,15 @@ double Sign(double value) {
 double WrapAngle(double value) {
   return std::atan2(std::sin(value), std::cos(value));
 }
+const MissionControllerConfig &SharedAlgorithmConfig() {
+  static const MissionControllerConfig config = LoadDefaultAlgorithmConfig();
+  return config;
+}
 } // namespace
+
+LineVelocityController::LineVelocityController()
+    : LineVelocityController(SharedAlgorithmConfig().line,
+                             SharedAlgorithmConfig().line_observation_dt) {}
 
 LineVelocityController::LineVelocityController(const RuleConfig &config,
                                                double observation_dt)

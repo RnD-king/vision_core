@@ -17,25 +17,25 @@ struct Intrinsics {
 };
 
 struct FeatureConfig {
-  int max_centers{8};
-  double image_center_u{320.0};
-  double lookahead_delta_v_px{220.0};
+  int max_centers{};
+  double image_center_u{};
+  double lookahead_delta_v_px{};
   // 점이 충분할 때 화면 아래/위의 겹치는 지역 직선 방향 차이로 커브를
-  // 추정한다. 커브가 강할수록 lookahead 거리를 기본값의 68%까지 줄인다.
-  int curve_min_points{5};
-  double curve_min_v_span_px{80.0};
-  int curve_local_fit_points{4};
-  double curve_full_scale_angle_rad{0.35};
-  double curve_smoothing_alpha{0.20};
-  double curve_missing_decay{0.96};
-  double curve_lookahead_min_scale{0.68};
-  // 정상 추종은 가까운 점 35%, 먼 lookahead점 65%를 섞어 코너 안쪽 절단을 줄인다.
-  double lookahead_alpha_normal{0.65};
-  double lookahead_alpha_recovery{0.85};
-  double recover_enter_nvis{2.0};
-  double recover_exit_nvis{3.0};
-  double recover_enter_u{0.70};
-  double recover_exit_u{0.35};
+  // 추정한다. 커브가 강할수록 lookahead 거리를 설정된 하한까지 줄인다.
+  int curve_min_points{};
+  double curve_min_v_span_px{};
+  int curve_local_fit_points{};
+  double curve_full_scale_angle_rad{};
+  double curve_smoothing_alpha{};
+  double curve_missing_decay{};
+  double curve_lookahead_min_scale{};
+  // 정상 추종은 가까운 점과 먼 lookahead 점을 설정된 비율로 섞는다.
+  double lookahead_alpha_normal{};
+  double lookahead_alpha_recovery{};
+  double recover_enter_nvis{};
+  double recover_exit_nvis{};
+  double recover_enter_u{};
+  double recover_exit_u{};
 };
 
 struct LineFeatureState {
@@ -60,45 +60,45 @@ struct Features {
 };
 
 struct RuleConfig {
-  int line_stable_window{10};
-  int line_stable_min_hits{7};
-  double line_reacquire_nvis{3.0};
-  double line_reacquire_u{0.35};
-  double cmd_vx_min{0.10};
-  double cmd_vx_max{1.20};
-  double cmd_wz_min{-1.90};
-  double cmd_wz_max{1.90};
-  double v_base{0.85};
-  // 정상 라인 추종에서 계산된 vx 전체를 기존의 75%로 낮춘다.
-  double tracking_speed_scale{0.80};
-  double k_u{3.00};
-  double k_slope{3.40};
-  double k_v_u{0.35};
-  double k_v_slope{0.35};
-  double dv_max{0.12};
-  double dw_max{0.40};
-  double recover_vx{0.12};
-  double recover_wz{0.75};
-  double line_recovery_vx_max{0.45};
-  double low_visible_n{2.0};
-  double no_visible_n{0.5};
-  double low_visible_vx{0.18};
-  double no_visible_vx{0.10};
-  double low_visible_wz_decay{0.90};
-  double no_visible_wz_decay{0.95};
+  int line_stable_window{};
+  int line_stable_min_hits{};
+  double line_reacquire_nvis{};
+  double line_reacquire_u{};
+  double cmd_vx_min{};
+  double cmd_vx_max{};
+  double cmd_wz_min{};
+  double cmd_wz_max{};
+  double v_base{};
+  // 정상 라인 추종에서 계산된 vx에 설정된 속도 비율을 적용한다.
+  double tracking_speed_scale{};
+  double k_u{};
+  double k_slope{};
+  double k_v_u{};
+  double k_v_slope{};
+  double dv_max{};
+  double dw_max{};
+  double recover_vx{};
+  double recover_wz{};
+  double line_recovery_vx_max{};
+  double low_visible_n{};
+  double no_visible_n{};
+  double low_visible_vx{};
+  double no_visible_vx{};
+  double low_visible_wz_decay{};
+  double no_visible_wz_decay{};
 
-  double recover_coast_s{0.30};
-  double recover_lookahead_m{0.55};
-  double recover_search_delay_s{0.35};
-  double recover_sweep_period_s{1.20};
-  double recover_search_wz_min{0.22};
-  double recover_search_wz_max{0.70};
-  double recover_k_bearing{1.35};
-  double recover_k_heading{0.45};
-  double recover_k_cross_track{0.70};
-  double recover_path_backtrack_m{0.35};
-  double recover_path_forward_margin_m{1.00};
-  double recover_side_memory_alpha{0.18};
+  double recover_coast_s{};
+  double recover_lookahead_m{};
+  double recover_search_delay_s{};
+  double recover_sweep_period_s{};
+  double recover_search_wz_min{};
+  double recover_search_wz_max{};
+  double recover_k_bearing{};
+  double recover_k_heading{};
+  double recover_k_cross_track{};
+  double recover_path_backtrack_m{};
+  double recover_path_forward_margin_m{};
+  double recover_side_memory_alpha{};
 };
 
 struct Pose2 {
@@ -200,6 +200,16 @@ enum class ActionCategory {
   kLocomotion = 2,
 };
 
+// 실행기 어댑터가 동일 action_id 생명주기를 유지하면서 실제 실행 방식을
+// 선택할 때 사용한다. ROS는 항상 action을 실행하고, MuJoCo는
+// kVelocityCompatible에서 pre_p2p_motion을 RL 보행기에 줄 수 있다.
+enum class ActionExecutionKind {
+  kNone = 0,
+  kVelocityCompatible = 1,
+  kDiscrete = 2,
+  kStationary = 3,
+};
+
 enum class ControlPhase {
   kMission = 0,
   kRlStopping = 1,
@@ -226,8 +236,8 @@ struct CameraFeedback {
   bool settled{true};
 };
 
-// enabled=false이면 기존 고정시간 placeholder를 사용한다. ROS 연결층처럼
-// enabled=true인 호출자는 DONE이 들어온 프레임에만 action_done=true로 전달한다.
+// enabled=false이면 기존 고정시간 placeholder를 사용한다. MissionController는
+// 실행기 ACK/DONE과 직전 command를 이용해 이 값을 내부 controller에 전달한다.
 struct ActionExecutionFeedback {
   bool enabled{false};
   bool action_done{false};
@@ -239,10 +249,19 @@ struct ControlCommand {
   MissionType mission{MissionType::kLine};
   int mission_phase{0};
   ControlPhase control_phase{ControlPhase::kMission};
+  // controller가 선택한 원래 연속속도 의도다. P2P backend에서도 action으로
+  // 양자화하기 전에 보존되며, 최종 wire velocity와 동시에 반환된다.
+  MotionCommand pre_p2p_motion;
+  // 기존 최종 velocity 출력이다. P2P action/hold에서는 0이며 velocity
+  // backend에서만 실행기가 직접 사용한다.
   MotionCommand velocity;
   MissionAction action{MissionAction::kNone};
   ActionCategory action_category{ActionCategory::kNone};
+  ActionExecutionKind action_execution_kind{ActionExecutionKind::kNone};
   std::uint64_t action_id{0};
+  // SHOOT action 실행 전에 몸을 회전할 각도다. 로봇 yaw 기준 좌회전(+),
+  // 우회전(-)이며, SHOOT 이외의 action에서는 0이다.
+  double action_yaw_rad{0.0};
   CameraRequest camera_request{CameraRequest::kNone};
 };
 

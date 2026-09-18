@@ -10,8 +10,9 @@ namespace vision_core {
 
 class LineVelocityController {
 public:
-  explicit LineVelocityController(const RuleConfig &config = RuleConfig{},
-                                  double observation_dt = 1.0 / 15.0);
+  LineVelocityController();
+  explicit LineVelocityController(const RuleConfig &config,
+                                  double observation_dt);
 
   void SetPath(const std::vector<Point2> &path_xy,
                const std::vector<double> &path_s,
@@ -36,7 +37,7 @@ private:
   Command ComputeImpl(const Features &features, bool use_memory_recovery);
 
   RuleConfig config_;
-  double observation_dt_{1.0 / 15.0};
+  double observation_dt_{};
   double last_vx_{0.0};
   double last_wz_{0.0};
   Pose2 pose_{};

@@ -30,39 +30,39 @@ enum class HurdleActionRequest {
 };
 
 struct HurdleConfig {
-  int stable_window{30};
-  int stable_min_hits{20};
-  int lost_frames{5};
-  double smooth_alpha{0.45};
+  int stable_window{};
+  int stable_min_hits{};
+  int lost_frames{};
+  double smooth_alpha{};
   // 임시 허들 접근은 공의 원거리 접근 파라미터와 같은 값을 사용한다.
-  double target_u_norm{0.50};
-  double approach_vx{0.35};
-  double approach_speed_scale{0.75};
-  double approach_wz_gain{2.50};
-  double approach_wz_max{0.80};
-  double approach_dw_max{0.35};
+  double target_u_norm{};
+  double approach_vx{};
+  double approach_speed_scale{};
+  double approach_wz_gain{};
+  double approach_wz_max{};
+  double approach_dw_max{};
   // 최초 진입은 허들 중심이 원본 화면 높이의 이 비율 이상 내려온 프레임만
   // 안정 검출 hit로 인정한다.
-  double acquire_min_v_norm{0.60};
-  double tilt_trigger_v_norm{0.75};
-  int tilt_trigger_window{10};
-  int tilt_trigger_min_hits{7};
-  double tilt_walk_speed_scale{0.50};
-  double tilt_walk_vx_max{0.25};
-  double tilt_walk_default_vx{0.1};
-  double camera_motion_timeout_sec{3.0};
+  double acquire_min_v_norm{};
+  double tilt_trigger_v_norm{};
+  int tilt_trigger_window{};
+  int tilt_trigger_min_hits{};
+  double tilt_walk_speed_scale{};
+  double tilt_walk_vx_max{};
+  double tilt_walk_default_vx{};
+  double camera_motion_timeout_sec{};
   // 실제 잔발/허들 넘기 모션이 연결되기 전 임시 동작이다.
-  double contact_walk_placeholder_vx{0.10};
-  double contact_walk_placeholder_sec{2.0};
-  double cross_placeholder_sec{3.0};
-  double hurdle_ignore_duration_sec{5.0};
-  double rl_stop_duration_sec{1.50};
-  int recovery_reacquire_min_hits{3};
+  double contact_walk_placeholder_vx{};
+  double contact_walk_placeholder_sec{};
+  double cross_placeholder_sec{};
+  double hurdle_ignore_duration_sec{};
+  double rl_stop_duration_sec{};
+  int recovery_reacquire_min_hits{};
   // 검출 손실 뒤 저속 복구를 유지할 최대 시간. 초과하면 kFailed로 잠긴다.
-  double recovery_timeout_sec{5.0};
-  double recovery_center_tolerance_norm{0.12};
-  double recovery_forward_vx{0.10};
-  double recovery_turn_wz{0.25};
+  double recovery_timeout_sec{};
+  double recovery_center_tolerance_norm{};
+  double recovery_forward_vx{};
+  double recovery_turn_wz{};
 };
 
 struct TrackedHurdle {
@@ -86,7 +86,8 @@ struct HurdleResult {
 
 class HurdleController {
 public:
-  explicit HurdleController(const HurdleConfig &config = HurdleConfig{});
+  HurdleController();
+  explicit HurdleController(const HurdleConfig &config);
   HurdleResult Compute(const std::optional<ObjectTarget> &hurdle_target,
                        int image_width, int image_height, double now_sec,
                        const CameraFeedback &camera_feedback);

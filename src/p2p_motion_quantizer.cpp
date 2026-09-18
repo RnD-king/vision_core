@@ -3,21 +3,109 @@
 #include <algorithm>
 #include <cmath>
 
+#include "vision_core/ball_controller.hpp"
+#include "vision_core/config_loader.hpp"
+#include "vision_core/goal_controller.hpp"
+#include "vision_core/hurdle_controller.hpp"
+
 namespace vision_core {
+namespace {
+const ControlCommandConfig &SharedCommandConfig() {
+  static const ControlCommandConfig config =
+      LoadDefaultAlgorithmConfig().command;
+  return config;
+}
+} // namespace
+
+P2pMotionProfile SelectP2pMotionProfile(MissionType mission,
+                                        int mission_phase) {
+  switch (mission) {
+  case MissionType::kBall: {
+    const auto mode = static_cast<BallMode>(mission_phase);
+    if (mode == BallMode::kTiltCameraDownAndApproach ||
+        mode == BallMode::kFineAdjustForPickup) {
+      return P2pMotionProfile::kFine;
+    }
+    if (mode == BallMode::kBallRecoveryForward ||
+        mode == BallMode::kBallRecoveryDown ||
+        mode == BallMode::kPostPickupBackAway ||
+        mode == BallMode::kPostPickupLineRecovery) {
+      return P2pMotionProfile::kRecovery;
+    }
+    break;
+  }
+  case MissionType::kHurdle: {
+    const auto mode = static_cast<HurdleMode>(mission_phase);
+    if (mode == HurdleMode::kTiltCameraDownAndSlow) {
+      return P2pMotionProfile::kFine;
+    }
+    if (mode == HurdleMode::kRecoveryForward ||
+        mode == HurdleMode::kRecoveryDown || mode == HurdleMode::kFailed) {
+      return P2pMotionProfile::kRecovery;
+    }
+    break;
+  }
+  case MissionType::kGoal: {
+    const auto mode = static_cast<GoalMode>(mission_phase);
+    if (mode == GoalMode::kApproach || mode == GoalMode::kFineAdjust) {
+      return P2pMotionProfile::kFine;
+    }
+    if (mode == GoalMode::kSearch || mode == GoalMode::kHeadingRecovery) {
+      return P2pMotionProfile::kRecovery;
+    }
+    break;
+  }
+  default:
+    break;
+  }
+  return P2pMotionProfile::kNormal;
+}
+
+P2pMotionQuantizer::P2pMotionQuantizer()
+    : P2pMotionQuantizer(SharedCommandConfig().p2p,
+                         SharedCommandConfig().p2p_fine,
+                         SharedCommandConfig().p2p_recovery) {}
 
 P2pMotionQuantizer::P2pMotionQuantizer(const P2pMotionConfig &config)
-    : config_(config) {}
+    : P2pMotionQuantizer(config, SharedCommandConfig().p2p_fine,
+                         SharedCommandConfig().p2p_recovery) {}
+
+P2pMotionQuantizer::P2pMotionQuantizer(const P2pMotionConfig &normal_config,
+                                       const P2pMotionConfig &fine_config,
+                                       const P2pMotionConfig &recovery_config)
+    : normal_config_(normal_config), fine_config_(fine_config),
+      recovery_config_(recovery_config) {}
 
 LocomotionAction
 P2pMotionQuantizer::Quantize(const MotionCommand &command) const {
+  return QuantizeWithConfig(command, normal_config_);
+}
+
+LocomotionAction P2pMotionQuantizer::Quantize(const MotionCommand &command,
+                                              MissionType mission,
+                                              int mission_phase) const {
+  switch (SelectP2pMotionProfile(mission, mission_phase)) {
+  case P2pMotionProfile::kFine:
+    return QuantizeWithConfig(command, fine_config_);
+  case P2pMotionProfile::kRecovery:
+    return QuantizeWithConfig(command, recovery_config_);
+  case P2pMotionProfile::kNormal:
+  default:
+    return QuantizeWithConfig(command, normal_config_);
+  }
+}
+
+LocomotionAction
+P2pMotionQuantizer::QuantizeWithConfig(const MotionCommand &command,
+                                       const P2pMotionConfig &config) const {
   if (!std::isfinite(command.vx) || !std::isfinite(command.vy) ||
       !std::isfinite(command.wz)) {
     return LocomotionAction::kNone;
   }
 
-  const double forward_deadband = std::max(0.0, config_.forward_deadband);
-  const double lateral_deadband = std::max(0.0, config_.lateral_deadband);
-  const double yaw_deadband = std::max(0.0, config_.yaw_deadband);
+  const double forward_deadband = std::max(0.0, config.forward_deadband);
+  const double lateral_deadband = std::max(0.0, config.lateral_deadband);
+  const double yaw_deadband = std::max(0.0, config.yaw_deadband);
   const double vx = std::abs(command.vx) >= forward_deadband ? command.vx : 0.0;
   const double vy = std::abs(command.vy) >= lateral_deadband ? command.vy : 0.0;
   const double wz = std::abs(command.wz) >= yaw_deadband ? command.wz : 0.0;
@@ -26,25 +114,26 @@ P2pMotionQuantizer::Quantize(const MotionCommand &command) const {
     return LocomotionAction::kNone;
   }
 
-  const double turn_vx_max = std::max(0.0, config_.turn_in_place_vx_max);
+  const double turn_vx_max = std::max(0.0, config.turn_in_place_vx_max);
   if (wz != 0.0 && std::abs(vx) <= turn_vx_max && vy == 0.0) {
     return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
                     : LocomotionAction::kTurnRightInPlace;
   }
 
-  const double lateral_ratio = std::max(0.0, config_.lateral_dominance_ratio);
+  const double lateral_ratio = std::max(0.0, config.lateral_dominance_ratio);
   if (vy != 0.0 && std::abs(vy) > std::abs(vx) * lateral_ratio) {
     return vy > 0.0 ? LocomotionAction::kWalkLeftTwo
                     : LocomotionAction::kWalkRightTwo;
   }
 
-  if (vx < 0.0) return LocomotionAction::kWalkBackwardTwo;
+  if (vx < 0.0)
+    return LocomotionAction::kWalkBackwardTwo;
 
   if (vx > 0.0) {
     const bool long_walk =
-        vx >= std::max(forward_deadband, config_.long_forward_vx);
+        vx >= std::max(forward_deadband, config.long_forward_vx);
     const bool curved =
-        std::abs(wz) >= std::max(yaw_deadband, config_.curve_yaw_threshold);
+        std::abs(wz) >= std::max(yaw_deadband, config.curve_yaw_threshold);
     if (curved) {
       if (wz > 0.0) {
         return long_walk ? LocomotionAction::kWalkForwardLeftSix
