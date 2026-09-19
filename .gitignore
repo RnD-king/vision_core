@@ -1,34 +1,28 @@
-# Prerequisites
+# Compiler dependency files
 *.d
 
-# Compiled Object files
+# Object files
 *.slo
 *.lo
 *.o
 *.obj
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
-# Linker files
+# Linker/debugger files
 *.ilk
-
-# Debugger Files
 *.pdb
+*.dwo
 
-# Compiled Dynamic libraries
+# Dynamic libraries
 *.so
+*.so.*
 *.dylib
 *.dll
-*.so.*
 
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
+# Static libraries
 *.lai
 *.la
 *.a
@@ -43,7 +37,6 @@
 build/
 Build/
 build-*/
-
 install/
 
 # CMake generated files
@@ -53,19 +46,23 @@ cmake_install.cmake
 Makefile
 install_manifest.txt
 compile_commands.json
+CMakeUserPresets.json
+
+# Test/cache outputs
+Testing/
+.cache/
+
+# Package-manager outputs
+vcpkg_installed/
+
+# Editor / local workspace
+.vscode/
+.idea/
+.codex/
+.DS_Store
 
 # Temporary files
 *.tmp
 *.log
 *.bak
 *.swp
-
-# vcpkg
-vcpkg_installed/
-
-# debug information files
-*.dwo
-
-# test output & cache
-Testing/
-.cache/
