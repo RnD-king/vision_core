@@ -5,6 +5,8 @@
 namespace vision_core {
 
 struct Point2 {
+  // OpenCV pixel convention: u is positive to image-right and v is positive
+  // downward.
   double u{0.0};
   double v{0.0};
 };
@@ -54,11 +56,13 @@ struct LineFeatureState {
 // P2P 모션 판단에 필요한 최소 라인 기하 표현이다. 기존 연속속도용
 // Features 필드는 호환성과 검증된 RL 보행 성능을 위해 그대로 유지한다.
 struct LineGuide {
+  // 모든 signed 값은 image-right가 양수다. MotionCommand의 wz는 로봇
+  // 좌회전이 양수이므로 controller에서 부호를 한 번 반전한다.
   // 가까운 점군 fitting의 대표 위치를 영상 중심으로 정규화한 값.
   double offset{0.0};
-  // 가까운 점군 fitting의 u(v) 방향각.
+  // 가까운 점군에서 화면 위(진행 방향)로 향하는 방향각.
   double heading_rad{0.0};
-  // 먼 점군 방향각 - 가까운 점군 방향각. 부호가 커브 방향을 보존한다.
+  // 먼 점군 방향각 - 가까운 점군 방향각. 오른쪽 커브가 양수다.
   double curvature_rad{0.0};
   // 점 개수, 세로 분포, 두 local fit 잔차를 합친 0..1 기하 신뢰도.
   double confidence{0.0};
@@ -66,6 +70,7 @@ struct LineGuide {
 };
 
 struct Features {
+  // u error와 slope는 모두 image-right가 양수다.
   double u_err_near{0.0};
   double u_err_lookahead{0.0};
   double u_err_ctrl{0.0};
@@ -156,6 +161,7 @@ struct ObjectTarget {
 };
 
 struct MotionCommand {
+  // Robot/ROS convention: vx forward(+), vy left(+), wz left-yaw(+).
   double vx{0.0};
   double vy{0.0};
   double wz{0.0};

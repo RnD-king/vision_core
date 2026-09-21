@@ -57,12 +57,19 @@ Jandi MJLab 어댑터는 실제 경기장 좌표를 line/object bbox와 RGB-D �
 않는다. 공통 YAML이 없거나 필수 키/타입이 잘못되면 0 기본값으로
 계속하지 않고 시작 시 실패한다.
 
-기존 연속속도 라인 특징은 그대로 유지하면서 P2P 판단용 최소 표현인
+기존 연속속도 라인 특징 필드 구조를 유지하면서 P2P 판단용 최소 표현인
 `LineGuide`를 함께 계산한다. `LineGuide`는 가까운 점군의 `offset`과
 `heading`, 가까운/먼 점군 방향 차이인 signed `curvature`, 두 local fit의
 품질을 합친 `confidence`만 제공한다. 변경 전 extractor는 비교용으로
 `legacy/line_feature_extractor_velocity_legacy.cpp`에 보존되어 있으며 빌드에는
 포함되지 않는다.
+
+라인 pixel 특징(`u_err`, `slope`, `LineGuide`)의 signed convention은 모두
+화면 오른쪽이 양수다. 로봇 명령은 ROS convention에 따라 `vy`, `wz`의 좌측이
+양수이므로 line controller가 조향을 만들 때 한 번 부호를 반전한다.
+`StepPerception()`은 YAML의 `image_center_u`보다 현재 frame의 camera
+`intrinsics.cx`를 우선하며, 직접 `Step()`을 호출할 때만 YAML 값을 fallback으로
+사용한다.
 
 velocity backend는 기존 연속속도 계산을 그대로 사용한다. P2P backend는
 `offset_gain`, `heading_gain`, `curvature_gain` 세 값만으로 LineGuide를

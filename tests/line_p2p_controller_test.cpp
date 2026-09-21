@@ -64,5 +64,16 @@ int main() {
   assert(std::abs(accumulated->heading_rad - expected) < kEps);
   assert(std::abs(accumulated->curvature_rad - expected) < kEps);
   assert(!accumulator.ActiveFor(7));
+
+  accumulator.Begin(8, 5.0);
+  accumulator.Add(8, 5.0, Guide(-0.30, -0.20, -0.10));
+  accumulator.Add(8, 5.5, Guide(0.30, 0.20, 0.10));
+  accumulator.Add(8, 6.0, Guide(0.60, 0.40, 0.20));
+  const auto all_samples = accumulator.FinishAll(8);
+  assert(all_samples.has_value());
+  assert(std::abs(all_samples->offset - 0.20) < kEps);
+  assert(std::abs(all_samples->heading_rad - (0.40 / 3.0)) < kEps);
+  assert(std::abs(all_samples->curvature_rad - (0.20 / 3.0)) < kEps);
+  assert(!accumulator.ActiveFor(8));
   return 0;
 }

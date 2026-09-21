@@ -14,6 +14,9 @@ struct LineP2pConfig {
   double offset_gain{};
   double heading_gain{};
   double curvature_gain{};
+  // 2걸음/제자리회전처럼 짧은 locomotion action이 DONE된 뒤 다음 action을
+  // 고르기 전에 정지 상태로 LineGuide를 모으는 시간이다.
+  double short_post_collect_sec{};
 };
 
 class LineP2pController {
@@ -35,6 +38,8 @@ public:
   void Begin(std::uint64_t action_id, double now_sec);
   void Add(std::uint64_t action_id, double now_sec, const LineGuide &guide);
   std::optional<LineGuide> Finish(std::uint64_t action_id, double now_sec);
+  // 짧은 action 뒤의 고정 관측 구간은 전체 유효 표본을 동일 가중 평균한다.
+  std::optional<LineGuide> FinishAll(std::uint64_t action_id);
   void Reset();
   bool ActiveFor(std::uint64_t action_id) const;
 

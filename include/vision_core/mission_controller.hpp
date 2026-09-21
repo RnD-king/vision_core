@@ -138,6 +138,9 @@ public:
   void Reset();
 
 private:
+  MissionFrameResult StepWithLineImageCenter(
+      const MissionFrameInput &input,
+      std::optional<double> line_image_center_u);
   MotionCommand StepLine(const Features &features, bool *reference_valid,
                          Features *updated_features);
   void BeginLineReacquisition();
@@ -148,6 +151,9 @@ private:
   LineVelocityController line_controller_;
   LineP2pController line_p2p_controller_;
   LineGuideAccumulator line_guide_accumulator_;
+  bool short_line_collection_active_{false};
+  std::uint64_t short_line_collection_action_id_{0};
+  double short_line_collection_end_sec_{0.0};
   BallController ball_controller_;
   HurdleController hurdle_controller_;
   GoalController goal_controller_;

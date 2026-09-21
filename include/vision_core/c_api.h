@@ -7,11 +7,13 @@ extern "C" {
 #endif
 
 typedef struct VisionLinePoint {
+  // OpenCV pixel convention: u right(+), v down(+).
   double u;
   double v;
 } VisionLinePoint;
 
 typedef struct VisionLineFeatures {
+  // u errors and slope use image-right as the positive direction.
   double u_err_near;
   double u_err_lookahead;
   double u_err_ctrl;

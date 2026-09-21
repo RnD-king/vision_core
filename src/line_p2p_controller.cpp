@@ -96,6 +96,31 @@ LineGuideAccumulator::Finish(std::uint64_t action_id, double now_sec) {
   return result.valid ? std::optional<LineGuide>(result) : std::nullopt;
 }
 
+std::optional<LineGuide>
+LineGuideAccumulator::FinishAll(std::uint64_t action_id) {
+  if (!ActiveFor(action_id) || samples_.empty()) {
+    Reset();
+    return std::nullopt;
+  }
+
+  LineGuide result;
+  for (const Sample &sample : samples_) {
+    result.offset += sample.guide.offset;
+    result.heading_rad += sample.guide.heading_rad;
+    result.curvature_rad += sample.guide.curvature_rad;
+    // confidence는 의도 계산에는 쓰지 않고 진단값으로만 평균한다.
+    result.confidence += sample.guide.confidence;
+  }
+  const double count = static_cast<double>(samples_.size());
+  result.offset /= count;
+  result.heading_rad /= count;
+  result.curvature_rad /= count;
+  result.confidence /= count;
+  result.valid = true;
+  Reset();
+  return result;
+}
+
 void LineGuideAccumulator::Reset() {
   action_id_ = 0;
   begin_sec_ = 0.0;

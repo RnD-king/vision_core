@@ -79,6 +79,12 @@ void MissionController::FinishMission() {
 }
 
 MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
+  return StepWithLineImageCenter(input, std::nullopt);
+}
+
+MissionFrameResult MissionController::StepWithLineImageCenter(
+    const MissionFrameInput &input,
+    std::optional<double> line_image_center_u) {
   MissionFrameResult output;
   bool line_reference_valid = false;
   ActionExecutionFeedback action_feedback = input.action_feedback;
@@ -97,10 +103,16 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
   }
 
   const auto compute_line = [&]() {
+    FeatureConfig line_feature_config = config_.line_features;
+    if (line_image_center_u && std::isfinite(*line_image_center_u) &&
+        *line_image_center_u >= 0.0 &&
+        *line_image_center_u < static_cast<double>(input.image_width)) {
+      line_feature_config.image_center_u = *line_image_center_u;
+    }
     const Features features = ComputeLineFeatures(
         input.line_centers, input.image_width, input.image_height,
         line_controller_.InRecovery(), input.previous_vx, input.previous_wz,
-        config_.line_features, &line_feature_state_);
+        line_feature_config, &line_feature_state_);
     const MotionCommand velocity_command =
         StepLine(features, &line_reference_valid, &output.line_features);
     output.line_command = velocity_command;
@@ -109,6 +121,7 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
             LocomotionBackend::kP2pAction &&
         active_mission_ == MissionType::kLine) {
       LineGuide decision_guide = output.line_features.guide;
+      bool force_line_hold = false;
       const bool pending_line_locomotion =
           last_command_.action_id != 0 &&
           last_command_.mission == MissionType::kLine &&
@@ -120,7 +133,21 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
           pending_line_locomotion &&
           IsLongLineLocomotionAction(last_command_.action);
 
-      if (long_action) {
+      if (short_line_collection_active_) {
+        line_guide_accumulator_.Add(short_line_collection_action_id_,
+                                    input.now_sec,
+                                    output.line_features.guide);
+        if (input.now_sec + 1e-9 < short_line_collection_end_sec_) {
+          force_line_hold = true;
+        } else {
+          const auto accumulated = line_guide_accumulator_.FinishAll(
+              short_line_collection_action_id_);
+          short_line_collection_active_ = false;
+          short_line_collection_action_id_ = 0;
+          short_line_collection_end_sec_ = 0.0;
+          if (accumulated) decision_guide = *accumulated;
+        }
+      } else if (long_action) {
         const bool collection_started =
             last_command_.control_phase == ControlPhase::kWaitingActionDone ||
             (matching_feedback &&
@@ -141,6 +168,31 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
                                              input.now_sec);
           if (accumulated) decision_guide = *accumulated;
         }
+      } else if (pending_line_locomotion && matching_feedback &&
+                 input.delivery_feedback.done) {
+        // 짧은 2걸음/제자리회전은 흔들림이 멎은 뒤의 관측으로 다음 동작을
+        // 정한다. DONE 프레임부터 고정 시간 동안 정지하며 전체 표본을 모은다.
+        line_guide_accumulator_.Reset();
+        short_line_collection_action_id_ = last_command_.action_id;
+        short_line_collection_end_sec_ =
+            input.now_sec +
+            std::max(0.0, config_.line_p2p.short_post_collect_sec);
+        short_line_collection_active_ = true;
+        line_guide_accumulator_.Begin(short_line_collection_action_id_,
+                                      input.now_sec);
+        line_guide_accumulator_.Add(short_line_collection_action_id_,
+                                    input.now_sec,
+                                    output.line_features.guide);
+        if (input.now_sec + 1e-9 < short_line_collection_end_sec_) {
+          force_line_hold = true;
+        } else {
+          const auto accumulated = line_guide_accumulator_.FinishAll(
+              short_line_collection_action_id_);
+          short_line_collection_active_ = false;
+          short_line_collection_action_id_ = 0;
+          short_line_collection_end_sec_ = 0.0;
+          if (accumulated) decision_guide = *accumulated;
+        }
       } else if (!pending_line_locomotion) {
         line_guide_accumulator_.Reset();
       }
@@ -149,8 +201,10 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
           line_p2p_controller_.Compute(decision_guide);
       // 점이 부족해 compact guide를 만들 수 없는 recovery 구간은 기존의
       // 검증된 line recovery 명령을 그대로 P2P quantizer에 전달한다.
-      output.line_command = decision_guide.valid ? p2p_command
-                                                 : velocity_command;
+      output.line_command = force_line_hold
+                                ? MotionCommand{}
+                                : (decision_guide.valid ? p2p_command
+                                                        : velocity_command);
     }
     output.line_computed = true;
   };
@@ -265,6 +319,12 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
   output.command = command_coordinator_.Compute(
       ball_result_, hurdle_result_, goal_result_, output.line_command,
       input.delivery_feedback);
+  if (output.command.mission != MissionType::kLine) {
+    line_guide_accumulator_.Reset();
+    short_line_collection_active_ = false;
+    short_line_collection_action_id_ = 0;
+    short_line_collection_end_sec_ = 0.0;
+  }
   last_command_ = output.command;
   output.active_mission = output.command.mission;
   output.ball = ball_result_;
@@ -406,6 +466,11 @@ MissionController::StepPerception(const PerceptionFrameInput &input) {
 
   MissionFrameInput prepared;
   prepared.line_centers = output.perception.line_centers;
+  std::optional<double> line_image_center_u;
+  if (std::isfinite(input.intrinsics.cx) && input.intrinsics.cx >= 0.0 &&
+      input.intrinsics.cx < static_cast<double>(input.image_width)) {
+    line_image_center_u = input.intrinsics.cx;
+  }
   prepared.previous_vx = input.previous_vx;
   prepared.previous_wz = input.previous_wz;
   prepared.ball_target = output.perception.targets.ball;
@@ -420,7 +485,7 @@ MissionController::StepPerception(const PerceptionFrameInput &input) {
   prepared.command_transport_enabled = input.command_transport_enabled;
   prepared.action_feedback = input.action_feedback;
   prepared.delivery_feedback = input.delivery_feedback;
-  output.mission = Step(prepared);
+  output.mission = StepWithLineImageCenter(prepared, line_image_center_u);
   return output;
 }
 
@@ -437,6 +502,9 @@ void MissionController::Reset() {
   hurdle_association_tracker_.Reset();
   line_feature_state_.Reset();
   line_guide_accumulator_.Reset();
+  short_line_collection_active_ = false;
+  short_line_collection_action_id_ = 0;
+  short_line_collection_end_sec_ = 0.0;
   ball_result_ = {};
   hurdle_result_ = {};
   goal_result_ = {};

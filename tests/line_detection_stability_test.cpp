@@ -1,5 +1,6 @@
 #include "vision_core/line_velocity_controller.hpp"
 #include "vision_core/line_feature_extractor.hpp"
+#include "vision_core/line_p2p_controller.hpp"
 #include "vision_core/config_loader.hpp"
 
 #ifdef NDEBUG
@@ -134,9 +135,26 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
   }
   assert(state.filtered_curve_score > 0.1);
   assert(curve_features.u_err_lookahead > 0.0);
+  assert(curve_features.slope > 0.0);
   assert(curve_features.guide.valid);
-  assert(std::abs(curve_features.guide.curvature_rad) > 0.05);
+  assert(curve_features.guide.heading_rad > 0.0);
+  assert(curve_features.guide.curvature_rad > 0.05);
   assert(curve_features.guide.confidence > 0.0);
+
+  const auto algorithm = vision_core::LoadDefaultAlgorithmConfig();
+  const vision_core::LineP2pController p2p(algorithm.line_p2p,
+                                            algorithm.line);
+  assert(p2p.Compute(curve_features.guide).wz < 0.0);
+
+  std::vector<vision_core::Point2> left_curve = curve_points;
+  for (auto &point : left_curve) point.u = 640.0 - point.u;
+  const auto left_features = vision_core::ComputeLineFeatures(
+      left_curve, 640, 480, false, 0.0, 0.0, config);
+  assert(left_features.u_err_lookahead < 0.0);
+  assert(left_features.slope < 0.0);
+  assert(left_features.guide.heading_rad < 0.0);
+  assert(left_features.guide.curvature_rad < -0.05);
+  assert(p2p.Compute(left_features.guide).wz > 0.0);
 
   const double before_sparse = state.filtered_curve_score;
   const std::vector<vision_core::Point2> sparse_points{

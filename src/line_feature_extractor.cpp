@@ -100,8 +100,10 @@ LineGuide ComputeLineGuide(const std::vector<Point2> &points, double cx,
   const double near_reference_v = MeanV(points, 0, local_count);
   const double near_reference_u = near_fit.a * near_reference_v + near_fit.b;
   guide.offset = (near_reference_u - cx) / denom;
-  guide.heading_rad = std::atan(near_fit.a);
-  const double far_heading_rad = std::atan(far_fit.a);
+  // FitLine의 a=du/dv이고 영상에서 진행 방향은 v 감소 방향이다.
+  // 따라서 -atan(a)가 진행 방향 기준 image-right(+) 각도다.
+  guide.heading_rad = -std::atan(near_fit.a);
+  const double far_heading_rad = -std::atan(far_fit.a);
   guide.curvature_rad = WrapAngle(far_heading_rad - guide.heading_rad);
 
   const int minimum_points = std::max(3, cfg.curve_min_points);
@@ -161,7 +163,9 @@ Features ComputeLineFeatures(const std::vector<Point2> &input, int image_width,
   const double cx = cfg.image_center_u >= 0.0
                         ? cfg.image_center_u
                         : 0.5 * static_cast<double>(image_width);
-  const double denom = std::max(cx, 1.0);
+  // 중심점이 principal point로 이동해도 좌/우 정규화 크기가 달라지지 않도록
+  // 영상 반폭을 분모로 사용한다.
+  const double denom = std::max(0.5 * static_cast<double>(image_width), 1.0);
   f.guide = ComputeLineGuide(points, cx, denom, cfg);
   f.u_err_near = (points.front().u - cx) / denom;
   f.u_err_lookahead = f.u_err_near;
@@ -172,7 +176,9 @@ Features ComputeLineFeatures(const std::vector<Point2> &input, int image_width,
     const double v_span = max_v - min_v;
     const LineFit global_fit = FitLine(points, 0, points.size());
     if (global_fit.valid) {
-      f.slope = global_fit.a / 120.0;
+      // u(v)의 기울기와 진행 방향(v 감소)의 부호는 반대다. u error 및
+      // LineGuide와 동일하게 image-right가 양수가 되도록 변환한다.
+      f.slope = -global_fit.a / 120.0;
 
       LineFit far_fit;
       double raw_curve_score = 0.0;

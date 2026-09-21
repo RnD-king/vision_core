@@ -140,6 +140,8 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(line_p2p, "offset_gain", config.line_p2p.offset_gain);
   Assign(line_p2p, "heading_gain", config.line_p2p.heading_gain);
   Assign(line_p2p, "curvature_gain", config.line_p2p.curvature_gain);
+  Assign(line_p2p, "short_post_collect_sec",
+         config.line_p2p.short_post_collect_sec);
 
   const YAML::Node ball = algorithm["ball"];
   Assign(ball, "stable_window", config.ball.stable_window);

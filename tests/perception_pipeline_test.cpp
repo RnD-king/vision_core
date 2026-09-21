@@ -65,6 +65,24 @@ void TestRawExtractionAndGoalDepth() {
   assert(!result.perception.imu_rectification_applied);
 }
 
+void TestPerceptionUsesCameraPrincipalPointForLineCenter() {
+  auto config = Config();
+  // YAML/C++ fallback과 다른 principal point를 넣어 perception 경로가 실제
+  // 카메라 intrinsics를 우선하는지 확인한다.
+  config.line_features.image_center_u = 50.0;
+  MissionController controller(config);
+  auto input = Frame();
+  input.intrinsics.cx = 55.0;
+  for (auto &detection : input.detections) {
+    if (detection.detection.class_id == 0) {
+      detection.detection.box.x += 5.0;
+    }
+  }
+  const auto result = controller.StepPerception(input);
+  assert(std::abs(result.mission.line_features.u_err_near) < 1e-12);
+  assert(std::abs(result.mission.line_features.guide.offset) < 1e-12);
+}
+
 void TestBestBackboardKeepsMatchingDepth() {
   MissionController controller(Config());
   auto input = Frame();
@@ -297,6 +315,7 @@ void TestBallBackboardAndHurdleTrackersKeepSeparateState() {
 
 int main() {
   TestRawExtractionAndGoalDepth();
+  TestPerceptionUsesCameraPrincipalPointForLineCenter();
   TestBestBackboardKeepsMatchingDepth();
   TestBackboardCenterDepthRejectsHigherConfidenceFalsePositive();
   TestImuCanBeSkippedOrApplied();

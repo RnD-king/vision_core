@@ -155,6 +155,57 @@ void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
   assert(result.command.action == MissionAction::kWalkForwardRightSix);
 }
 
+void TestShortLineActionCollectsForOneSecondAfterDone() {
+  auto config = FastConfig();
+  config.enable_ball = false;
+  config.enable_hurdle = false;
+  config.enable_goal = false;
+  config.line.line_stable_window = 1;
+  config.line.line_stable_min_hits = 1;
+  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
+  // 첫 직진을 2걸음 action으로 만들고 DONE 뒤 1초 관측을 검증한다.
+  config.command.p2p.long_forward_vx = 1.0;
+  config.line_p2p.short_post_collect_sec = 1.0;
+  config.command.first_action_id = 600;
+  MissionController controller(config);
+
+  auto input = Frame(0.0);
+  auto result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kAction);
+  assert(result.command.action == MissionAction::kWalkForwardTwo);
+  assert(result.command.action_id == 600);
+
+  input = Frame(0.1);
+  input.delivery_feedback = {600, true, false};
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kHold);
+  assert(result.command.action_id == 600);
+
+  // DONE 직후에는 다음 action을 발행하지 않고 정지 관측을 시작한다.
+  input = Frame(2.0);
+  for (auto &point : input.line_centers) point.u = 60.0;
+  input.delivery_feedback = {600, true, true};
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kHold);
+  assert(result.command.action_id == 0);
+
+  input = Frame(2.5);
+  for (auto &point : input.line_centers) point.u = 60.0;
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kHold);
+  assert(result.command.action_id == 0);
+
+  // DONE+1초에 수집한 오른쪽 치우침이 다음 PRE-P2P 조향 의도에 반영된다.
+  // 라인 양자화 정책은 짧은 전진에서는 wz보다 WALK_FORWARD_TWO를 우선한다.
+  input = Frame(3.0);
+  for (auto &point : input.line_centers) point.u = 60.0;
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kAction);
+  assert(result.command.action_id == 601);
+  assert(result.command.action == MissionAction::kWalkForwardTwo);
+  assert(result.command.pre_p2p_motion.wz < -0.10);
+}
+
 } // namespace
 
 int main() {
@@ -162,6 +213,7 @@ int main() {
   TestHurdleEntryHasPriorityOverBall();
   TestCarryingBallAllowsOnlyGoalEntry();
   TestMissionControllerReturnsActionAndPreP2pMotionTogether();
+  TestShortLineActionCollectsForOneSecondAfterDone();
   std::cout << "mission controller tests passed\n";
   return 0;
 }
