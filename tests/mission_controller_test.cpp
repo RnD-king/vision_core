@@ -133,13 +133,26 @@ void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
   assert(result.command.action_id == 500);
   assert(result.command.pre_p2p_motion.vx == first_pre_p2p.vx);
 
-  // DONE은 MissionController 상태를 외부에서 직접 바꾸지 않고 feedback으로만
-  // 전달하며, 다음 보행 블록은 새 ID로 발급된다.
+  // 긴 action 후반에는 오른쪽으로 치우친 line을 관측한다. DONE 프레임 자체는
+  // 다시 중앙선이지만, 다음 판단은 후반 누적 특징을 사용해야 한다.
   input = Frame(0.2);
+  for (auto &point : input.line_centers) point.u = 70.0;
+  input.delivery_feedback = {500, false, false};
+  result = controller.Step(input);
+  assert(result.command.action_id == 500);
+
+  input = Frame(0.3);
+  for (auto &point : input.line_centers) point.u = 70.0;
+  input.delivery_feedback = {500, false, false};
+  result = controller.Step(input);
+  assert(result.command.action_id == 500);
+
+  input = Frame(0.4);
   input.delivery_feedback = {500, true, true};
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
   assert(result.command.action_id == 501);
+  assert(result.command.action == MissionAction::kWalkForwardRightSix);
 }
 
 } // namespace

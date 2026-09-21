@@ -16,6 +16,7 @@ add_library(shared_vision_core SHARED
   src/coordinate_rectifier.cpp
   src/line_detection_extractor.cpp
   src/line_feature_extractor.cpp
+  src/line_p2p_controller.cpp
   src/line_velocity_controller.cpp
   src/object_target_extractor.cpp
   src/object_association_tracker.cpp
@@ -153,6 +154,17 @@ if(BUILD_TESTING)
     COMMAND shared_vision_core_p2p_motion_quantizer_test
   )
 
+  add_executable(shared_vision_core_line_p2p_controller_test
+    tests/line_p2p_controller_test.cpp
+  )
+  target_link_libraries(shared_vision_core_line_p2p_controller_test
+    PRIVATE shared_vision_core
+  )
+  add_test(
+    NAME shared_vision_core_line_p2p_controller_test
+    COMMAND shared_vision_core_line_p2p_controller_test
+  )
+
   add_executable(shared_vision_core_mission_controller_test
     tests/mission_controller_test.cpp
   )
@@ -194,6 +206,7 @@ if(BUILD_TESTING)
     shared_vision_core_line_detection_stability_test
     shared_vision_core_control_command_test
     shared_vision_core_p2p_motion_quantizer_test
+    shared_vision_core_line_p2p_controller_test
     shared_vision_core_mission_controller_test
     shared_vision_core_perception_pipeline_test
     shared_vision_core_object_association_tracker_test

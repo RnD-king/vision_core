@@ -73,6 +73,8 @@ public:
                             MissionType mission, int mission_phase) const;
 
 private:
+  LocomotionAction QuantizeLineWithConfig(
+      const MotionCommand &command, const P2pMotionConfig &config) const;
   LocomotionAction QuantizeWithConfig(const MotionCommand &command,
                                       const P2pMotionConfig &config) const;
 

@@ -13,6 +13,7 @@
 #include "vision_core/hurdle_controller.hpp"
 #include "vision_core/line_feature_extractor.hpp"
 #include "vision_core/line_velocity_controller.hpp"
+#include "vision_core/mission_controller.hpp"
 #include "vision_core/motion_command_selector.hpp"
 #include "vision_core/object_target_extractor.hpp"
 
@@ -129,6 +130,26 @@ VisionGoalResult FromCoreGoalResult(const vision_core::GoalResult &result) {
           result.command.vx,
           result.command.vy,
           result.command.wz};
+}
+
+VisionControlCommandV3 FromCoreControlCommandV3(
+    const vision_core::ControlCommand &command) {
+  return {static_cast<int>(command.command_type),
+          static_cast<int>(command.mission),
+          command.mission_phase,
+          static_cast<int>(command.control_phase),
+          command.velocity.vx,
+          command.velocity.vy,
+          command.velocity.wz,
+          command.pre_p2p_motion.vx,
+          command.pre_p2p_motion.vy,
+          command.pre_p2p_motion.wz,
+          static_cast<int>(command.action),
+          command.action_id,
+          static_cast<int>(command.action_category),
+          static_cast<int>(command.action_execution_kind),
+          command.action_yaw_rad,
+          static_cast<int>(command.camera_request)};
 }
 
 vision_core::CameraFeedback ToCameraFeedback(int camera_actual_mode,
@@ -769,22 +790,7 @@ VisionControlCommandV3 vision_control_command_compute_v3(
       handle, ball_result, hurdle_result, goal_result, ball_has_ball,
       line_vx, line_vy, line_wz, feedback_action_id, action_acknowledged,
       action_done);
-  return {static_cast<int>(command.command_type),
-          static_cast<int>(command.mission),
-          command.mission_phase,
-          static_cast<int>(command.control_phase),
-          command.velocity.vx,
-          command.velocity.vy,
-          command.velocity.wz,
-          command.pre_p2p_motion.vx,
-          command.pre_p2p_motion.vy,
-          command.pre_p2p_motion.wz,
-          static_cast<int>(command.action),
-          command.action_id,
-          static_cast<int>(command.action_category),
-          static_cast<int>(command.action_execution_kind),
-          command.action_yaw_rad,
-          static_cast<int>(command.camera_request)};
+  return FromCoreControlCommandV3(command);
 }
 
 void vision_control_command_coordinator_reset(
@@ -792,6 +798,105 @@ void vision_control_command_coordinator_reset(
   auto *coordinator =
       static_cast<vision_core::ControlCommandCoordinator *>(handle);
   if (coordinator != nullptr) coordinator->Reset();
+}
+
+VisionMissionControllerHandle vision_mission_controller_create(void) {
+  return new vision_core::MissionController();
+}
+
+void vision_mission_controller_destroy(VisionMissionControllerHandle handle) {
+  delete static_cast<vision_core::MissionController *>(handle);
+}
+
+VisionMissionFrameResult vision_mission_controller_step_perception_v1(
+    VisionMissionControllerHandle handle,
+    const VisionPerceptionDetection *detections, int detection_count,
+    double fx, double fy, double cx, double cy,
+    int enable_imu_rectification, int imu_valid,
+    double roll_rad, double pitch_rad,
+    double previous_vx, double previous_wz,
+    int image_width, int image_height, double now_sec,
+    int camera_actual_mode, int camera_settled,
+    int command_transport_enabled,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done) {
+  auto *controller = static_cast<vision_core::MissionController *>(handle);
+  if (controller == nullptr) return {};
+
+  vision_core::PerceptionFrameInput input;
+  if (detections != nullptr && detection_count > 0) {
+    input.detections.reserve(static_cast<std::size_t>(detection_count));
+    for (int index = 0; index < detection_count; ++index) {
+      const auto &source = detections[index];
+      vision_core::PerceptionDetection observation;
+      observation.detection = {
+          {source.detection.x, source.detection.y,
+           source.detection.width, source.detection.height},
+          source.detection.confidence, source.detection.class_id};
+      if (source.center_depth_valid != 0) {
+        observation.center_depth_m = source.center_depth_m;
+      }
+      if (source.left_depth_valid != 0) {
+        observation.left_depth_m = source.left_depth_m;
+      }
+      if (source.right_depth_valid != 0) {
+        observation.right_depth_m = source.right_depth_m;
+      }
+      input.detections.push_back(observation);
+    }
+  }
+  input.intrinsics = {fx, fy, cx, cy};
+  input.enable_imu_rectification = enable_imu_rectification != 0;
+  input.imu_valid = imu_valid != 0;
+  input.roll_rad = roll_rad;
+  input.pitch_rad = pitch_rad;
+  input.previous_vx = previous_vx;
+  input.previous_wz = previous_wz;
+  input.image_width = image_width;
+  input.image_height = image_height;
+  input.now_sec = now_sec;
+  input.camera_feedback =
+      ToCameraFeedback(camera_actual_mode, camera_settled);
+  input.command_transport_enabled = command_transport_enabled != 0;
+  input.delivery_feedback = {
+      feedback_action_id, action_acknowledged != 0, action_done != 0};
+
+  const auto result = controller->StepPerception(input);
+  VisionMissionFrameResult output{};
+  output.command = FromCoreControlCommandV3(result.mission.command);
+  output.active_mission = static_cast<int>(result.mission.active_mission);
+  output.line_features = FromCore(result.mission.line_features);
+  output.line_vx = result.mission.line_command.vx;
+  output.line_vy = result.mission.line_command.vy;
+  output.line_wz = result.mission.line_command.wz;
+  output.line_computed = result.mission.line_computed ? 1 : 0;
+  output.line_in_recovery = result.mission.line_in_recovery ? 1 : 0;
+  output.has_ball = result.mission.has_ball ? 1 : 0;
+  output.ball = FromCoreBallResult(result.mission.ball);
+  output.hurdle = FromCoreHurdleResult(result.mission.hurdle);
+  output.goal = FromCoreGoalResult(result.mission.goal);
+  output.targets = {
+      FromCoreTarget(result.perception.targets.ball),
+      FromCoreTarget(result.perception.targets.goal),
+      FromCoreTarget(result.perception.targets.backboard),
+      FromCoreTarget(result.perception.targets.hurdle)};
+  output.goal_pose = {
+      result.perception.goal_pose.valid ? 1 : 0,
+      result.perception.goal_pose.x_m,
+      result.perception.goal_pose.z_m,
+      result.perception.goal_pose.yaw_rad,
+      result.perception.goal_pose.confidence};
+  output.imu_rectification_applied =
+      result.perception.imu_rectification_applied ? 1 : 0;
+  output.raw_line_count =
+      static_cast<int>(result.perception.raw_line_centers.size());
+  output.rectified_line_count =
+      static_cast<int>(result.perception.line_centers.size());
+  return output;
+}
+
+void vision_mission_controller_reset(VisionMissionControllerHandle handle) {
+  auto *controller = static_cast<vision_core::MissionController *>(handle);
+  if (controller != nullptr) controller->Reset();
 }
 
 } // extern "C"

@@ -373,6 +373,56 @@ VisionControlCommandV3 vision_control_command_compute_v3(
 void vision_control_command_coordinator_reset(
     VisionControlCommandCoordinatorHandle handle);
 
+// ROS의 MissionController::StepPerception과 동일한 공통 파이프라인을
+// simulator/Python에서 호출하기 위한 additive C API다. 기존 개별 controller
+// 및 control-command API의 ABI는 변경하지 않는다.
+typedef void *VisionMissionControllerHandle;
+
+typedef struct VisionPerceptionDetection {
+  VisionObjectDetection detection;
+  int center_depth_valid;
+  double center_depth_m;
+  int left_depth_valid;
+  double left_depth_m;
+  int right_depth_valid;
+  double right_depth_m;
+} VisionPerceptionDetection;
+
+typedef struct VisionMissionFrameResult {
+  VisionControlCommandV3 command;
+  int active_mission;
+  VisionLineFeatures line_features;
+  double line_vx;
+  double line_vy;
+  double line_wz;
+  int line_computed;
+  int line_in_recovery;
+  int has_ball;
+  VisionBallResult ball;
+  VisionHurdleResult hurdle;
+  VisionGoalResult goal;
+  VisionObjectTargets targets;
+  VisionGoalPoseObservation goal_pose;
+  int imu_rectification_applied;
+  int raw_line_count;
+  int rectified_line_count;
+} VisionMissionFrameResult;
+
+VisionMissionControllerHandle vision_mission_controller_create(void);
+void vision_mission_controller_destroy(VisionMissionControllerHandle handle);
+VisionMissionFrameResult vision_mission_controller_step_perception_v1(
+    VisionMissionControllerHandle handle,
+    const VisionPerceptionDetection *detections, int detection_count,
+    double fx, double fy, double cx, double cy,
+    int enable_imu_rectification, int imu_valid,
+    double roll_rad, double pitch_rad,
+    double previous_vx, double previous_wz,
+    int image_width, int image_height, double now_sec,
+    int camera_actual_mode, int camera_settled,
+    int command_transport_enabled,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done);
+void vision_mission_controller_reset(VisionMissionControllerHandle handle);
+
 #ifdef __cplusplus
 }
 #endif

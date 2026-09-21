@@ -8,12 +8,21 @@
 #include "vision_core/coordinate_rectifier.hpp"
 
 namespace vision_core {
+namespace {
+bool IsLongLineLocomotionAction(MissionAction action) {
+  return action == MissionAction::kWalkForwardSix ||
+         action == MissionAction::kWalkForwardLeftSix ||
+         action == MissionAction::kWalkForwardRightSix;
+}
+} // namespace
+
 MissionController::MissionController()
     : MissionController(LoadDefaultAlgorithmConfig()) {}
 
 MissionController::MissionController(const MissionControllerConfig &config)
     : config_(config),
       line_controller_(config.line, config.line_observation_dt),
+      line_p2p_controller_(config.line_p2p, config.line),
       ball_controller_(config.ball), hurdle_controller_(config.hurdle),
       goal_controller_(config.goal), command_coordinator_(config.command),
       ball_association_tracker_(config.object_association),
@@ -92,8 +101,57 @@ MissionFrameResult MissionController::Step(const MissionFrameInput &input) {
         input.line_centers, input.image_width, input.image_height,
         line_controller_.InRecovery(), input.previous_vx, input.previous_wz,
         config_.line_features, &line_feature_state_);
-    output.line_command = StepLine(features, &line_reference_valid,
-                                   &output.line_features);
+    const MotionCommand velocity_command =
+        StepLine(features, &line_reference_valid, &output.line_features);
+    output.line_command = velocity_command;
+
+    if (config_.command.locomotion_backend ==
+            LocomotionBackend::kP2pAction &&
+        active_mission_ == MissionType::kLine) {
+      LineGuide decision_guide = output.line_features.guide;
+      const bool pending_line_locomotion =
+          last_command_.action_id != 0 &&
+          last_command_.mission == MissionType::kLine &&
+          last_command_.action_category == ActionCategory::kLocomotion;
+      const bool matching_feedback =
+          pending_line_locomotion && input.delivery_feedback.action_id != 0 &&
+          input.delivery_feedback.action_id == last_command_.action_id;
+      const bool long_action =
+          pending_line_locomotion &&
+          IsLongLineLocomotionAction(last_command_.action);
+
+      if (long_action) {
+        const bool collection_started =
+            last_command_.control_phase == ControlPhase::kWaitingActionDone ||
+            (matching_feedback &&
+             (input.delivery_feedback.acknowledged ||
+              input.delivery_feedback.done));
+        if (collection_started &&
+            !line_guide_accumulator_.ActiveFor(last_command_.action_id)) {
+          line_guide_accumulator_.Begin(last_command_.action_id,
+                                        input.now_sec);
+        }
+        if (line_guide_accumulator_.ActiveFor(last_command_.action_id)) {
+          line_guide_accumulator_.Add(last_command_.action_id, input.now_sec,
+                                      output.line_features.guide);
+        }
+        if (matching_feedback && input.delivery_feedback.done) {
+          const auto accumulated =
+              line_guide_accumulator_.Finish(last_command_.action_id,
+                                             input.now_sec);
+          if (accumulated) decision_guide = *accumulated;
+        }
+      } else if (!pending_line_locomotion) {
+        line_guide_accumulator_.Reset();
+      }
+
+      const MotionCommand p2p_command =
+          line_p2p_controller_.Compute(decision_guide);
+      // 점이 부족해 compact guide를 만들 수 없는 recovery 구간은 기존의
+      // 검증된 line recovery 명령을 그대로 P2P quantizer에 전달한다.
+      output.line_command = decision_guide.valid ? p2p_command
+                                                 : velocity_command;
+    }
     output.line_computed = true;
   };
 
@@ -378,6 +436,7 @@ void MissionController::Reset() {
   backboard_association_tracker_.Reset();
   hurdle_association_tracker_.Reset();
   line_feature_state_.Reset();
+  line_guide_accumulator_.Reset();
   ball_result_ = {};
   hurdle_result_ = {};
   goal_result_ = {};

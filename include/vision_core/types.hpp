@@ -29,6 +29,9 @@ struct FeatureConfig {
   double curve_smoothing_alpha{};
   double curve_missing_decay{};
   double curve_lookahead_min_scale{};
+  // Compact LineGuide의 가까운/먼 local fit 잔차가 이 값 이상이면
+  // confidence의 fitting 성분을 0으로 본다.
+  double guide_fit_rmse_full_scale_px{};
   // 정상 추종은 가까운 점과 먼 lookahead 점을 설정된 비율로 섞는다.
   double lookahead_alpha_normal{};
   double lookahead_alpha_recovery{};
@@ -48,6 +51,20 @@ struct LineFeatureState {
   }
 };
 
+// P2P 모션 판단에 필요한 최소 라인 기하 표현이다. 기존 연속속도용
+// Features 필드는 호환성과 검증된 RL 보행 성능을 위해 그대로 유지한다.
+struct LineGuide {
+  // 가까운 점군 fitting의 대표 위치를 영상 중심으로 정규화한 값.
+  double offset{0.0};
+  // 가까운 점군 fitting의 u(v) 방향각.
+  double heading_rad{0.0};
+  // 먼 점군 방향각 - 가까운 점군 방향각. 부호가 커브 방향을 보존한다.
+  double curvature_rad{0.0};
+  // 점 개수, 세로 분포, 두 local fit 잔차를 합친 0..1 기하 신뢰도.
+  double confidence{0.0};
+  bool valid{false};
+};
+
 struct Features {
   double u_err_near{0.0};
   double u_err_lookahead{0.0};
@@ -57,6 +74,7 @@ struct Features {
   double in_recovery{0.0};
   double vx_prev{0.0};
   double wz_prev{0.0};
+  LineGuide guide;
 };
 
 struct RuleConfig {

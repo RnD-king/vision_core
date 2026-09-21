@@ -81,6 +81,8 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
          config.line_features.curve_missing_decay);
   Assign(features, "curve_lookahead_min_scale",
          config.line_features.curve_lookahead_min_scale);
+  Assign(features, "guide_fit_rmse_full_scale_px",
+         config.line_features.guide_fit_rmse_full_scale_px);
   Assign(features, "lookahead_alpha_normal",
          config.line_features.lookahead_alpha_normal);
   Assign(features, "lookahead_alpha_recovery",
@@ -133,6 +135,11 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
          config.line.recover_path_forward_margin_m);
   Assign(line, "recover_side_memory_alpha",
          config.line.recover_side_memory_alpha);
+
+  const YAML::Node line_p2p = algorithm["line_p2p"];
+  Assign(line_p2p, "offset_gain", config.line_p2p.offset_gain);
+  Assign(line_p2p, "heading_gain", config.line_p2p.heading_gain);
+  Assign(line_p2p, "curvature_gain", config.line_p2p.curvature_gain);
 
   const YAML::Node ball = algorithm["ball"];
   Assign(ball, "stable_window", config.ball.stable_window);

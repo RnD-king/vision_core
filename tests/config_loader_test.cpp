@@ -11,7 +11,12 @@ int main(int argc, char **argv) {
   assert(argc == 2);
   const auto config = vision_core::LoadAlgorithmConfig(argv[1]);
   assert(config.line_features.max_centers == 8);
+  assert(std::abs(config.line_features.guide_fit_rmse_full_scale_px - 20.0) <
+         1e-12);
   assert(std::abs(config.line.k_slope - 3.0) < 1e-12);
+  assert(std::abs(config.line_p2p.offset_gain - 1.0) < 1e-12);
+  assert(std::abs(config.line_p2p.heading_gain - 1.0) < 1e-12);
+  assert(std::abs(config.line_p2p.curvature_gain - 1.0) < 1e-12);
   assert(std::abs(config.ball.far_speed_scale - 0.90) < 1e-12);
   assert(config.ball.tilt_down_min_hits == 7);
   assert(config.command.locomotion_backend ==

@@ -9,6 +9,7 @@
 #include "vision_core/hurdle_controller.hpp"
 #include "vision_core/line_detection_extractor.hpp"
 #include "vision_core/line_feature_extractor.hpp"
+#include "vision_core/line_p2p_controller.hpp"
 #include "vision_core/line_velocity_controller.hpp"
 #include "vision_core/object_target_extractor.hpp"
 #include "vision_core/object_association_tracker.hpp"
@@ -18,6 +19,7 @@ namespace vision_core {
 struct MissionControllerConfig {
   FeatureConfig line_features;
   RuleConfig line;
+  LineP2pConfig line_p2p;
   BallConfig ball;
   HurdleConfig hurdle;
   GoalConfig goal;
@@ -144,6 +146,8 @@ private:
 
   MissionControllerConfig config_;
   LineVelocityController line_controller_;
+  LineP2pController line_p2p_controller_;
+  LineGuideAccumulator line_guide_accumulator_;
   BallController ball_controller_;
   HurdleController hurdle_controller_;
   GoalController goal_controller_;

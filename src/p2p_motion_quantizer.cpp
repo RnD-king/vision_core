@@ -84,6 +84,9 @@ P2pMotionQuantizer::Quantize(const MotionCommand &command) const {
 LocomotionAction P2pMotionQuantizer::Quantize(const MotionCommand &command,
                                               MissionType mission,
                                               int mission_phase) const {
+  if (mission == MissionType::kLine) {
+    return QuantizeLineWithConfig(command, normal_config_);
+  }
   switch (SelectP2pMotionProfile(mission, mission_phase)) {
   case P2pMotionProfile::kFine:
     return QuantizeWithConfig(command, fine_config_);
@@ -93,6 +96,49 @@ LocomotionAction P2pMotionQuantizer::Quantize(const MotionCommand &command,
   default:
     return QuantizeWithConfig(command, normal_config_);
   }
+}
+
+LocomotionAction P2pMotionQuantizer::QuantizeLineWithConfig(
+    const MotionCommand &command, const P2pMotionConfig &config) const {
+  if (!std::isfinite(command.vx) || !std::isfinite(command.vy) ||
+      !std::isfinite(command.wz)) {
+    return LocomotionAction::kNone;
+  }
+
+  const double forward_deadband = std::max(0.0, config.forward_deadband);
+  const double lateral_deadband = std::max(0.0, config.lateral_deadband);
+  const double yaw_deadband = std::max(0.0, config.yaw_deadband);
+  const double vx = std::abs(command.vx) >= forward_deadband ? command.vx : 0.0;
+  const double vy = std::abs(command.vy) >= lateral_deadband ? command.vy : 0.0;
+  const double wz = std::abs(command.wz) >= yaw_deadband ? command.wz : 0.0;
+
+  if (vx == 0.0 && vy == 0.0 && wz == 0.0) {
+    return LocomotionAction::kNone;
+  }
+  if (wz != 0.0 && std::abs(vx) <= std::max(0.0, config.turn_in_place_vx_max) &&
+      vy == 0.0) {
+    return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
+                    : LocomotionAction::kTurnRightInPlace;
+  }
+  if (vx < 0.0) return LocomotionAction::kWalkBackwardTwo;
+  if (vx > 0.0) {
+    const bool long_walk =
+        vx >= std::max(forward_deadband, config.long_forward_vx);
+    if (!long_walk) return LocomotionAction::kWalkForwardTwo;
+    const bool curved =
+        std::abs(wz) >= std::max(yaw_deadband, config.curve_yaw_threshold);
+    if (curved) {
+      return wz > 0.0 ? LocomotionAction::kWalkForwardLeftSix
+                      : LocomotionAction::kWalkForwardRightSix;
+    }
+    return LocomotionAction::kWalkForwardSix;
+  }
+  if (vy != 0.0) {
+    return vy > 0.0 ? LocomotionAction::kWalkLeftTwo
+                    : LocomotionAction::kWalkRightTwo;
+  }
+  return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
+                  : LocomotionAction::kTurnRightInPlace;
 }
 
 LocomotionAction

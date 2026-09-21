@@ -36,15 +36,16 @@
 - Line 상태에서 골대 > 허들 > 공 순서로 새 미션을 선택하고, 진입한 미션은
   해당 controller의 성공·유실 종료 전까지 중앙 코디네이터에서 잠금
 
-### G1 시뮬레이터
+### 시뮬레이터
 
-G1은 Python `ctypes` 연결층을 통해 같은
+Python 시뮬레이터는 `ctypes` 연결층을 통해 같은
 `libshared_vision_core.so`를 호출한다. 따라서 특징 수식이나 규칙기반 속도
-수식을 코어에서 변경하면 실제 비전과 G1에 같은 계산을 적용할 수 있다.
+수식을 코어에서 변경하면 실제 비전과 시뮬레이터에 같은 계산을 적용할 수 있다.
 
-현재 G1의 점선 계산은 코어에 연결되어 있다. PID 경기장 실행에서는 현재 순번의
-농구공 하나를 가상 카메라 bbox로 만들어 공 C API에도 전달한다. 골대·허들
-컨트롤러와 C API는 준비됐지만 G1 경기장 객체/bbox 입력 생성은 아직 연결 전이다.
+Jandi MJLab 어댑터는 실제 경기장 좌표를 line/object bbox와 RGB-D 표본으로
+변환해 `vision_mission_controller_step_perception_v1()`에 전달한다. 따라서
+거리 검증, IMU 좌표 보정, depth pose, association tracker, 연속 검출/lost 처리와
+미션 전이는 ROS와 같은 `MissionController::StepPerception()`에서 수행된다.
 
 ## 공통 알고리즘 설정
 
@@ -55,6 +56,20 @@ G1은 Python `ctypes` 연결층을 통해 같은
 알고리즘 Config 구조체는 값 전달용이며 숫자 기본값을 중복 보관하지
 않는다. 공통 YAML이 없거나 필수 키/타입이 잘못되면 0 기본값으로
 계속하지 않고 시작 시 실패한다.
+
+기존 연속속도 라인 특징은 그대로 유지하면서 P2P 판단용 최소 표현인
+`LineGuide`를 함께 계산한다. `LineGuide`는 가까운 점군의 `offset`과
+`heading`, 가까운/먼 점군 방향 차이인 signed `curvature`, 두 local fit의
+품질을 합친 `confidence`만 제공한다. 변경 전 extractor는 비교용으로
+`legacy/line_feature_extractor_velocity_legacy.cpp`에 보존되어 있으며 빌드에는
+포함되지 않는다.
+
+velocity backend는 기존 연속속도 계산을 그대로 사용한다. P2P backend는
+`offset_gain`, `heading_gain`, `curvature_gain` 세 값만으로 LineGuide를
+PRE-P2P 속도 의도로 바꾼다. 6걸음 계열 action은 ACK부터 DONE까지 관측한
+특징 중 실제 실행시간 후반 50%를 끝에 가까울수록 크게 선형 가중 평균하여
+다음 action을 고른다. 2걸음과 제자리회전처럼 짧은 action은 아직 DONE 시점의
+최신 프레임을 사용한다.
 
 실행 시 우선순위는 `공통 YAML < ROS params-file < ROS CLI -p`다. 따라서
 공통 값을 바꿀 때는 YAML을 수정하고 core를 다시 install하면 되며,
@@ -254,6 +269,11 @@ ROS `line_perception_node`의 기본 backend는 `p2p`이며 `/cmd_vel`을 발행
 필드와 action 번호는 변경하지 않았다. C 호출자는 기존 ABI의 v1/v2를 계속 쓸 수
 있고, MuJoCo 어댑터는 `vision_control_command_compute_v3()`에서 PRE-P2P 속도와
 실행 정책을 함께 받을 수 있다.
+
+시뮬레이터가 detection 후보부터 공통 perception/mission 경로를 사용해야 할 때는
+additive C API인 `vision_mission_controller_step_perception_v1()`을 사용한다.
+기존 개별 controller C API는 ABI 호환을 위해 유지되지만, 외부에서 별도 미션
+FSM을 구성하는 용도로 사용하지 않는다.
 
 ```bash
 ros2 run vision line_perception_node --ros-args \

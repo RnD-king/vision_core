@@ -1,5 +1,6 @@
 #include "vision_core/mission_controller.hpp"
 #include "vision_core/config_loader.hpp"
+#include "vision_core/c_api.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -140,6 +141,42 @@ void TestEmptyDetectionFrameStillSteps() {
   assert(result.mission.active_mission == MissionType::kLine);
 }
 
+void TestMissionPerceptionCapiUsesSharedPipeline() {
+  VisionMissionControllerHandle handle = vision_mission_controller_create();
+  assert(handle != nullptr);
+  VisionPerceptionDetection detections[3]{};
+  detections[0].detection = {40.0, 79.0, 20.0, 20.0, 0.90, 0};
+  detections[1].detection = {40.0, 39.0, 20.0, 20.0, 0.90, 0};
+  detections[2].detection = {30.0, 20.0, 40.0, 20.0, 0.90, 3};
+  detections[2].center_depth_valid = 1;
+  detections[2].center_depth_m = 0.70;
+  detections[2].left_depth_valid = 1;
+  detections[2].left_depth_m = 0.65;
+  detections[2].right_depth_valid = 1;
+  detections[2].right_depth_m = 0.75;
+
+  const VisionMissionFrameResult result =
+      vision_mission_controller_step_perception_v1(
+          handle, detections, 3, 100.0, 100.0, 50.0, 50.0,
+          1, 1, 0.1, 0.0, 0.0, 0.0, 100, 100, 0.0,
+          static_cast<int>(CameraMode::kForward), 1, 1, 0, 0, 0);
+  assert(result.raw_line_count == 2);
+  assert(result.rectified_line_count == 2);
+  assert(result.imu_rectification_applied == 1);
+  assert(result.targets.backboard.valid == 1);
+  assert(result.goal_pose.valid == 1);
+  assert(std::isfinite(result.command.pre_p2p_vx));
+  assert(std::isfinite(result.command.pre_p2p_vy));
+  assert(std::isfinite(result.command.pre_p2p_wz));
+  assert(result.command.action_execution_kind >=
+         VISION_ACTION_EXECUTION_NONE);
+  assert(result.command.action_execution_kind <=
+         VISION_ACTION_EXECUTION_STATIONARY);
+
+  vision_mission_controller_reset(handle);
+  vision_mission_controller_destroy(handle);
+}
+
 void TestAssociationUsesPreviousIdentityAndMatchingDepth() {
   MissionController controller(Config());
   auto first = Frame();
@@ -264,6 +301,7 @@ int main() {
   TestBackboardCenterDepthRejectsHigherConfidenceFalsePositive();
   TestImuCanBeSkippedOrApplied();
   TestEmptyDetectionFrameStillSteps();
+  TestMissionPerceptionCapiUsesSharedPipeline();
   TestAssociationUsesPreviousIdentityAndMatchingDepth();
   TestMissingFrameIsNotForwardedOrCountedAsBallHit();
   TestGoalRemainsOutsideAssociationTracker();

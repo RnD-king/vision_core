@@ -110,6 +110,11 @@ void TestStraightKeepsCurveScoreNearZero() {
     const auto features = vision_core::ComputeLineFeatures(
         points, 640, 480, false, 0.0, 0.0, config, &state);
     assert(std::abs(features.u_err_lookahead) < 1e-9);
+    assert(features.guide.valid);
+    assert(std::abs(features.guide.offset) < 1e-9);
+    assert(std::abs(features.guide.heading_rad) < 1e-9);
+    assert(std::abs(features.guide.curvature_rad) < 1e-9);
+    assert(features.guide.confidence > 0.99);
   }
   assert(state.filtered_curve_score < 1e-9);
 }
@@ -129,6 +134,9 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
   }
   assert(state.filtered_curve_score > 0.1);
   assert(curve_features.u_err_lookahead > 0.0);
+  assert(curve_features.guide.valid);
+  assert(std::abs(curve_features.guide.curvature_rad) > 0.05);
+  assert(curve_features.guide.confidence > 0.0);
 
   const double before_sparse = state.filtered_curve_score;
   const std::vector<vision_core::Point2> sparse_points{
@@ -138,6 +146,29 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
       sparse_points, 640, 480, false, 0.0, 0.0, config, &state);
   assert(state.filtered_curve_score < before_sparse);
   assert(state.filtered_curve_score > before_sparse * 0.90);
+}
+
+void TestGuideOffsetAndLocalFitConfidence() {
+  const auto config =
+      vision_core::LoadDefaultAlgorithmConfig().line_features;
+  const std::vector<vision_core::Point2> shifted_straight{
+      {400.0, 420.0}, {400.0, 350.0}, {400.0, 280.0},
+      {400.0, 210.0}, {400.0, 140.0}, {400.0, 70.0},
+  };
+  const auto straight = vision_core::ComputeLineFeatures(
+      shifted_straight, 640, 480, false, 0.0, 0.0, config);
+  assert(straight.guide.valid);
+  assert(std::abs(straight.guide.offset - 0.25) < 1e-9);
+  assert(std::abs(straight.guide.heading_rad) < 1e-9);
+
+  const std::vector<vision_core::Point2> scattered{
+      {280.0, 420.0}, {360.0, 350.0}, {285.0, 280.0},
+      {355.0, 210.0}, {290.0, 140.0}, {350.0, 70.0},
+  };
+  const auto noisy = vision_core::ComputeLineFeatures(
+      scattered, 640, 480, false, 0.0, 0.0, config);
+  assert(noisy.guide.valid);
+  assert(noisy.guide.confidence < straight.guide.confidence);
 }
 
 } // namespace
@@ -150,6 +181,7 @@ int main() {
   TestLookaheadApproachUsesOnlyFarPoint();
   TestStraightKeepsCurveScoreNearZero();
   TestCurveUsesStableAdaptiveLookaheadAndSparseFallback();
+  TestGuideOffsetAndLocalFitConfidence();
   std::cout << "line detection stability tests passed\n";
   return 0;
 }

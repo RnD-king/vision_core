@@ -10,6 +10,7 @@ vision_algorithm:
     curve_smoothing_alpha: 0.20
     curve_missing_decay: 0.96
     curve_lookahead_min_scale: 0.68
+    guide_fit_rmse_full_scale_px: 20.0
     lookahead_alpha_normal: 0.70
     lookahead_alpha_recovery: 0.20
     recover_enter_nvis: 2.0
@@ -55,6 +56,11 @@ vision_algorithm:
     recover_path_backtrack_m: 0.35
     recover_path_forward_margin_m: 1.00
     recover_side_memory_alpha: 0.18
+
+  line_p2p:
+    offset_gain: 1.0
+    heading_gain: 1.0
+    curvature_gain: 1.0
 
   ball:
     stable_window: 10
