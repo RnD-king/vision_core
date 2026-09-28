@@ -75,6 +75,7 @@ int main() {
   assert(command.action == MissionAction::kStepForwardHalf);
   assert(command.action_execution_kind ==
          ActionExecutionKind::kVelocityCompatible);
+  assert(command.action_yaw_rad == 0.0);
   assert(command.pre_p2p_motion.vx == 0.15);
 
   coordinator.Reset();
@@ -261,6 +262,76 @@ int main() {
   assert(command.action_id == 101);
   assert(command.pre_p2p_motion.vx == 0.30);
 
+  // READY를 받은 긴 라인 보행은 현재 동작이 끝나기 전에 다음 action을
+  // 1단계 큐 명령으로 발행한다.
+  ControlCommandCoordinator ready_coordinator(p2p_config);
+  command = ready_coordinator.Compute({}, {}, {},
+                                      MotionCommand{0.30, 0.0, 0.0});
+  const auto ready_current_id = command.action_id;
+  command = ready_coordinator.Compute({}, {}, {},
+                                      MotionCommand{0.30, 0.0, 0.0},
+                                      {ready_current_id, true, false, false});
+  assert(command.command_type == CommandType::kHold);
+  command = ready_coordinator.Compute({}, {}, {},
+                                      MotionCommand{0.30, 0.0, -0.20},
+                                      {ready_current_id, true, false, true});
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action == MissionAction::kWalkForwardRightSix);
+  assert(command.action_id != ready_current_id);
+  assert(command.action_yaw_rad == -0.20);
+  const auto queued_id = command.action_id;
+
+  command = ready_coordinator.Compute({}, {}, {},
+                                      MotionCommand{0.30, 0.0, -0.20},
+                                      {queued_id, true, false, false});
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action_id == queued_id);
+  assert(command.action_yaw_rad == -0.20);
+
+  command = ready_coordinator.Compute({}, {}, {},
+                                      MotionCommand{0.30, 0.0, -0.20},
+                                      {ready_current_id, true, true, false});
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action_id == queued_id);
+  assert(command.action_yaw_rad == -0.20);
+
+  // 영상 왼쪽으로 향해야 하는 조향 의도는 로봇 yaw 좌회전(+)으로 전달한다.
+  ControlCommandCoordinator left_yaw_coordinator(p2p_config);
+  command = left_yaw_coordinator.Compute({}, {}, {},
+                                         MotionCommand{0.30, 0.0, 0.20});
+  assert(command.action == MissionAction::kWalkForwardLeftSix);
+  assert(command.action_yaw_rad == 0.20);
+
+  // ACK가 설정 시간 안에 오지 않으면 늦은 ACK에 의한 중복 실행을 피하도록
+  // 자동 재발행하지 않고 Reset 전까지 timeout HOLD로 잠근다.
+  ControlCommandCoordinator timeout_coordinator(p2p_config);
+  command = timeout_coordinator.Compute({}, {}, {},
+                                        MotionCommand{0.30, 0.0, 0.0}, {},
+                                        1.0);
+  const auto timeout_id = command.action_id;
+  command = timeout_coordinator.Compute({}, {}, {},
+                                        MotionCommand{0.30, 0.0, 0.0}, {},
+                                        10.999);
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action_id == timeout_id);
+  command = timeout_coordinator.Compute({}, {}, {},
+                                        MotionCommand{0.30, 0.0, 0.0}, {},
+                                        11.0);
+  assert(command.command_type == CommandType::kHold);
+  assert(command.control_phase == ControlPhase::kActionAckTimedOut);
+  assert(command.action_id == timeout_id);
+  command = timeout_coordinator.Compute(
+      {}, {}, {}, MotionCommand{0.30, 0.0, 0.0},
+      {timeout_id, true, false, false}, 11.1);
+  assert(command.command_type == CommandType::kHold);
+  assert(command.control_phase == ControlPhase::kActionAckTimedOut);
+  timeout_coordinator.Reset();
+  command = timeout_coordinator.Compute({}, {}, {},
+                                        MotionCommand{0.30, 0.0, 0.0}, {},
+                                        11.2);
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action_id != timeout_id);
+
   // 진행 중 보행은 ID가 완료될 때까지 직렬화한다. 완료된 프레임에는 새
   // 보행보다 controller가 요청한 미션 액션을 우선 발급한다.
   ball.active = true;
@@ -298,6 +369,7 @@ int main() {
   assert(command.command_type == CommandType::kAction);
   assert(command.action_category == ActionCategory::kLocomotion);
   assert(command.action == MissionAction::kWalkForwardRightSix);
+  assert(command.action_yaw_rad == -0.20);
 
   // P2P의 영속 정지는 /cmd_vel 대신 새 액션을 만들지 않는 HOLD다.
   ControlCommandCoordinator p2p_idle(p2p_config);

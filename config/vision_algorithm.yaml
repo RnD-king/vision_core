@@ -156,9 +156,12 @@ vision_algorithm:
     stable_min_hits: 7
     lost_frames: 5
     smooth_alpha: 0.45
-    post_pickup_wait_sec: 0.0
+    # 공 집기 뒤 라인을 다시 잡은 시점부터 이 시간 동안 라인을 계속 따라간 뒤
+    # 골대 카메라를 든다.
+    post_pickup_wait_sec: 3.0
     camera_motion_timeout_sec: 3.0
     camera_tilt_forward_vx: 0.30
+    # 호환용 설정. 현재 백보드 search는 정지 관측하며 회전하지 않는다.
     search_wz: 0.30
     target_u_norm: 0.50
     approach_vx: 0.25
@@ -215,6 +218,9 @@ vision_algorithm:
   command:
     first_action_id: 1
     locomotion_backend: "p2p"
+    # ACTION 발행 뒤 이 시간 안에 ACK가 없으면 중복 실행 방지를 위해
+    # ACK_TIMEOUT 정지 상태로 잠그며 Reset으로만 해제한다.
+    action_ack_timeout_sec: 10.0
     p2p:
       forward_deadband: 0.02
       lateral_deadband: 0.02

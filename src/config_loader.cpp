@@ -334,6 +334,8 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
 
   const YAML::Node command = algorithm["command"];
   Assign(command, "first_action_id", config.command.first_action_id);
+  Assign(command, "action_ack_timeout_sec",
+         config.command.action_ack_timeout_sec);
   std::string backend;
   Assign(command, "locomotion_backend", backend);
   if (backend == "p2p") {

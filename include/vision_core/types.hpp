@@ -239,6 +239,11 @@ enum class ControlPhase {
   kRlStopping = 1,
   kWaitingActionAck = 2,
   kWaitingActionDone = 3,
+  kWaitingQueuedActionAck = 4,
+  kWaitingQueuedActionStart = 5,
+  // ACTION 발행 뒤 설정 시간 안에 ACK를 받지 못해 재실행을 금지한 정지 상태다.
+  // 늦은 ACK로 같은 동작이 중복 실행되는 것을 막기 위해 Reset 전까지 유지한다.
+  kActionAckTimedOut = 6,
 };
 
 enum class CameraMode {
@@ -283,8 +288,8 @@ struct ControlCommand {
   ActionCategory action_category{ActionCategory::kNone};
   ActionExecutionKind action_execution_kind{ActionExecutionKind::kNone};
   std::uint64_t action_id{0};
-  // SHOOT action 실행 전에 몸을 회전할 각도다. 로봇 yaw 기준 좌회전(+),
-  // 우회전(-)이며, SHOOT 이외의 action에서는 0이다.
+  // SHOOT의 몸통 목표각 또는 좌/우 6걸음 복합 보행 전에 적용할 제자리회전
+  // 목표각이다. 로봇 yaw 기준 좌회전(+), 우회전(-)이며 그 외에는 0이다.
   double action_yaw_rad{0.0};
   CameraRequest camera_request{CameraRequest::kNone};
 };

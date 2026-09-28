@@ -54,7 +54,7 @@ struct MissionFrameInput {
   CameraFeedback camera_feedback;
   // true이면 controller용 ActionExecutionFeedback을 직전 공통 command와
   // delivery_feedback에서 MissionController가 직접 만든다. 실행기 어댑터는
-  // controller 상태를 건드리지 않고 ACK/DONE만 반환하면 된다.
+  // controller 상태를 건드리지 않고 ACK/READY/DONE만 반환하면 된다.
   bool command_transport_enabled{false};
   // command_transport_enabled=false인 기존 직접 호출자를 위한 호환 입력이다.
   ActionExecutionFeedback action_feedback;
@@ -154,6 +154,7 @@ private:
   bool short_line_collection_active_{false};
   std::uint64_t short_line_collection_action_id_{0};
   double short_line_collection_end_sec_{0.0};
+  std::uint64_t ready_line_action_id_{0};
   BallController ball_controller_;
   HurdleController hurdle_controller_;
   GoalController goal_controller_;

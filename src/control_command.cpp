@@ -3,6 +3,7 @@
 #include "vision_core/config_loader.hpp"
 
 #include <cmath>
+#include <limits>
 
 namespace vision_core {
 namespace {
@@ -178,6 +179,24 @@ bool IsRlStopping(MissionType mission, const BallResult &ball,
           hurdle.mode == HurdleMode::kRlStopping);
 }
 
+bool IsLongLineLocomotionAction(MissionAction action) {
+  return action == MissionAction::kWalkForwardSix ||
+         action == MissionAction::kWalkForwardLeftSix ||
+         action == MissionAction::kWalkForwardRightSix;
+}
+
+double LocomotionTargetYawRad(MissionAction action,
+                              const MotionCommand &command) {
+  if (!std::isfinite(command.wz)) return 0.0;
+  if (action == MissionAction::kWalkForwardLeftSix) {
+    return std::abs(command.wz);
+  }
+  if (action == MissionAction::kWalkForwardRightSix) {
+    return -std::abs(command.wz);
+  }
+  return 0.0;
+}
+
 } // namespace
 
 ControlCommandCoordinator::ControlCommandCoordinator()
@@ -202,7 +221,9 @@ ControlCommand ControlCommandCoordinator::BeginAction(
   pending_pre_p2p_motion_ = command.pre_p2p_motion;
   pending_action_yaw_rad_ =
       std::isfinite(action_yaw_rad) ? action_yaw_rad : 0.0;
+  pending_action_issued_sec_ = compute_time_valid_ ? compute_now_sec_ : 0.0;
   pending_acknowledged_ = false;
+  pending_ready_ = false;
   command.command_type = CommandType::kAction;
   command.control_phase = ControlPhase::kWaitingActionAck;
   command.velocity = {};
@@ -214,12 +235,50 @@ ControlCommand ControlCommandCoordinator::BeginAction(
   return command;
 }
 
+ControlCommand ControlCommandCoordinator::BeginQueuedLineAction(
+    ControlCommand command, MissionAction action) {
+  queued_action_id_ = next_action_id_++;
+  if (next_action_id_ == 0) next_action_id_ = 1;
+  queued_action_ = action;
+  queued_pre_p2p_motion_ = command.pre_p2p_motion;
+  queued_action_yaw_rad_ =
+      LocomotionTargetYawRad(action, queued_pre_p2p_motion_);
+  queued_action_issued_sec_ = compute_time_valid_ ? compute_now_sec_ : 0.0;
+  queued_acknowledged_ = false;
+  command.command_type = CommandType::kAction;
+  command.control_phase = ControlPhase::kWaitingQueuedActionAck;
+  command.velocity = {};
+  command.action = queued_action_;
+  command.action_category = ActionCategory::kLocomotion;
+  command.action_execution_kind = ActionExecutionKind::kVelocityCompatible;
+  command.action_id = queued_action_id_;
+  command.action_yaw_rad = queued_action_yaw_rad_;
+  return command;
+}
+
 ControlCommand ControlCommandCoordinator::Compute(
     const BallResult &ball_result, const HurdleResult &hurdle_result,
     const GoalResult &goal_result, const MotionCommand &line_candidate,
     const CommandDeliveryFeedback &feedback) {
-  if (pending_action_id_ != 0 && feedback.action_id == pending_action_id_) {
+  return Compute(ball_result, hurdle_result, goal_result, line_candidate,
+                 feedback, std::numeric_limits<double>::quiet_NaN());
+}
+
+ControlCommand ControlCommandCoordinator::Compute(
+    const BallResult &ball_result, const HurdleResult &hurdle_result,
+    const GoalResult &goal_result, const MotionCommand &line_candidate,
+    const CommandDeliveryFeedback &feedback, double now_sec) {
+  compute_time_valid_ = std::isfinite(now_sec);
+  compute_now_sec_ = compute_time_valid_ ? now_sec : 0.0;
+
+  if (!action_ack_timed_out_ && queued_action_id_ != 0 &&
+      feedback.action_id == queued_action_id_) {
+    queued_acknowledged_ = queued_acknowledged_ || feedback.acknowledged;
+  }
+  if (!action_ack_timed_out_ && pending_action_id_ != 0 &&
+      feedback.action_id == pending_action_id_) {
     pending_acknowledged_ = pending_acknowledged_ || feedback.acknowledged;
+    pending_ready_ = pending_ready_ || feedback.ready;
     if (feedback.done) {
       if (pending_action_category_ == ActionCategory::kMission) {
         // FINE_ADJUST_HOLD는 정지 상태에서 관측을 더 모으기 위해 연속 실행될
@@ -230,14 +289,50 @@ ControlCommand ControlCommandCoordinator::Compute(
                 ? MissionAction::kNone
                 : pending_action_;
       }
-      pending_action_id_ = 0;
-      pending_action_ = MissionAction::kNone;
-      pending_action_category_ = ActionCategory::kNone;
-      pending_action_execution_kind_ = ActionExecutionKind::kNone;
-      pending_pre_p2p_motion_ = {};
-      pending_action_yaw_rad_ = 0.0;
-      pending_acknowledged_ = false;
+      if (queued_action_id_ != 0) {
+        pending_action_id_ = queued_action_id_;
+        pending_action_ = queued_action_;
+        pending_action_category_ = ActionCategory::kLocomotion;
+        pending_action_execution_kind_ =
+            ActionExecutionKind::kVelocityCompatible;
+        pending_pre_p2p_motion_ = queued_pre_p2p_motion_;
+        pending_action_yaw_rad_ = queued_action_yaw_rad_;
+        pending_action_issued_sec_ = queued_action_issued_sec_;
+        pending_acknowledged_ = queued_acknowledged_;
+        pending_ready_ = false;
+        queued_action_id_ = 0;
+        queued_action_ = MissionAction::kNone;
+        queued_pre_p2p_motion_ = {};
+        queued_action_yaw_rad_ = 0.0;
+        queued_action_issued_sec_ = 0.0;
+        queued_acknowledged_ = false;
+      } else {
+        pending_action_id_ = 0;
+        pending_action_ = MissionAction::kNone;
+        pending_action_category_ = ActionCategory::kNone;
+        pending_action_execution_kind_ = ActionExecutionKind::kNone;
+        pending_pre_p2p_motion_ = {};
+        pending_action_yaw_rad_ = 0.0;
+        pending_action_issued_sec_ = 0.0;
+        pending_acknowledged_ = false;
+        pending_ready_ = false;
+      }
     }
+  }
+
+  if (!action_ack_timed_out_ && compute_time_valid_) {
+    const double timeout_sec = std::max(0.0, config_.action_ack_timeout_sec);
+    const auto expired = [&](double issued_sec) {
+      return timeout_sec > 0.0 && compute_now_sec_ >= issued_sec &&
+             compute_now_sec_ - issued_sec >= timeout_sec;
+    };
+    const bool pending_timeout = pending_action_id_ != 0 &&
+                                 !pending_acknowledged_ &&
+                                 expired(pending_action_issued_sec_);
+    const bool queued_timeout = queued_action_id_ != 0 &&
+                                !queued_acknowledged_ &&
+                                expired(queued_action_issued_sec_);
+    action_ack_timed_out_ = pending_timeout || queued_timeout;
   }
 
   // 실행 중인 액션까지 끝난 뒤 controller의 명시적인 종료 상태만 잠금을 푼다.
@@ -263,7 +358,53 @@ ControlCommand ControlCommandCoordinator::Compute(
   const MissionAction requested = RequestedAction(
       command.mission, ball_result, hurdle_result, goal_result);
 
+  if (action_ack_timed_out_) {
+    // 늦은 ACK 뒤 동일 동작을 새 ID로 다시 실행하는 위험을 피하기 위해 자동
+    // 재시도하지 않는다. 외부 감독자가 원인을 처리한 뒤 Reset해야 한다.
+    const bool queued_failed = queued_action_id_ != 0 && !queued_acknowledged_;
+    command.command_type = CommandType::kHold;
+    command.control_phase = ControlPhase::kActionAckTimedOut;
+    command.velocity = {};
+    command.action_id = queued_failed ? queued_action_id_ : pending_action_id_;
+    command.action = queued_failed ? queued_action_ : pending_action_;
+    command.action_category = queued_failed ? ActionCategory::kLocomotion
+                                            : pending_action_category_;
+    command.action_execution_kind =
+        queued_failed ? ActionExecutionKind::kVelocityCompatible
+                      : pending_action_execution_kind_;
+    command.pre_p2p_motion = queued_failed ? queued_pre_p2p_motion_
+                                           : pending_pre_p2p_motion_;
+    command.action_yaw_rad = queued_failed ? queued_action_yaw_rad_
+                                           : pending_action_yaw_rad_;
+    return command;
+  }
+
   if (pending_action_id_ != 0) {
+    if (queued_action_id_ == 0 && pending_ready_ &&
+        command.mission == MissionType::kLine &&
+        pending_action_category_ == ActionCategory::kLocomotion &&
+        IsLongLineLocomotionAction(pending_action_)) {
+      const LocomotionAction next = p2p_quantizer_.Quantize(
+          command.pre_p2p_motion, MissionType::kLine, 0);
+      if (next != LocomotionAction::kNone) {
+        return BeginQueuedLineAction(command, ToActionCode(next));
+      }
+    }
+    if (queued_action_id_ != 0) {
+      command.action_id = queued_action_id_;
+      command.action = queued_action_;
+      command.action_category = ActionCategory::kLocomotion;
+      command.action_execution_kind = ActionExecutionKind::kVelocityCompatible;
+      command.pre_p2p_motion = queued_pre_p2p_motion_;
+      command.action_yaw_rad = queued_action_yaw_rad_;
+      command.velocity = {};
+      command.command_type = queued_acknowledged_ ? CommandType::kHold
+                                                  : CommandType::kAction;
+      command.control_phase =
+          queued_acknowledged_ ? ControlPhase::kWaitingQueuedActionStart
+                               : ControlPhase::kWaitingQueuedActionAck;
+      return command;
+    }
     command.action_id = pending_action_id_;
     command.action = pending_action_;
     command.action_category = pending_action_category_;
@@ -320,7 +461,9 @@ ControlCommand ControlCommandCoordinator::Compute(
     } else {
       return BeginAction(command, ToActionCode(locomotion),
                          ActionCategory::kLocomotion,
-                         ActionExecutionKind::kVelocityCompatible);
+                         ActionExecutionKind::kVelocityCompatible,
+                         LocomotionTargetYawRad(ToActionCode(locomotion),
+                                                command.pre_p2p_motion));
     }
   } else {
     command.command_type = CommandType::kVelocity;
@@ -336,7 +479,18 @@ void ControlCommandCoordinator::Reset() {
   pending_action_execution_kind_ = ActionExecutionKind::kNone;
   pending_pre_p2p_motion_ = {};
   pending_action_yaw_rad_ = 0.0;
+  pending_action_issued_sec_ = 0.0;
   pending_acknowledged_ = false;
+  pending_ready_ = false;
+  action_ack_timed_out_ = false;
+  queued_action_id_ = 0;
+  queued_action_ = MissionAction::kNone;
+  queued_pre_p2p_motion_ = {};
+  queued_action_yaw_rad_ = 0.0;
+  queued_action_issued_sec_ = 0.0;
+  queued_acknowledged_ = false;
+  compute_now_sec_ = 0.0;
+  compute_time_valid_ = false;
   suppressed_mission_action_ = MissionAction::kNone;
 }
 
@@ -357,14 +511,15 @@ ControlCommand 결정 규칙 (ROS 통합 경로)
 - line_candidate
     어떤 물체 미션도 속도 제어권을 갖지 않을 때 사용할 라인 추종 속도다.
 - feedback
-    현재 전송 중인 action_id에 대한 ACK/DONE 수신 결과다.
+    현재 전송 중인 action_id에 대한 ACK/READY/DONE 수신 결과다.
 
 최종 ControlCommand 항목
 -----------------------
 - command_type : VELOCITY(1), ACTION(2), HOLD(3) 중 현재 실행 방식을 나타낸다.
 - mission      : LINE(1), BALL(2), GOAL(3), HURDLE(4) 중 현재 판단 상태다.
 - mission_phase: 해당 controller의 mode enum 숫자를 그대로 넣는다.
-- control_phase: 일반 미션(0), RL 정지 중(1), ACK 대기(2), DONE 대기(3)다.
+- control_phase: 일반 미션(0), RL 정지 중(1), ACK 대기(2), DONE 대기(3),
+    예약 ACK 대기(4), 예약 action 시작 대기(5), ACK timeout 정지(6)다.
 - pre_p2p_motion: P2P action으로 양자화하기 전 vx/vy/wz 의도다. pending 중에도
     해당 action_id가 처음 선택됐을 때의 값을 유지한다.
 - velocity     : VELOCITY일 때 사용할 vx/vy/wz다. ACTION/HOLD에서는 0/0/0이다.
@@ -423,12 +578,18 @@ Hurdle 순서로 검사한다. 각 controller가 kNone을 요청하면 action=NO
 - ACK 수신:
     command_type=HOLD, control_phase=WAITING_ACTION_DONE,
     동일한 action/action_id와 velocity=0/0/0 유지
+- 긴 라인 보행의 READY 수신:
+    그 시점까지 누적한 라인 특징으로 다음 action을 정하고, 새 action_id와
+    새 action_id를 가진 예약 ACTION을 출력한다. 실행기는 READY를 보낸 현재
+    action이 DONE될 때까지 이 새 ID를 큐에 보관한다.
 - DONE 수신:
-    pending action을 해제한다. 일반 미션 action은 같은 controller 상태에서
+    예약 action이 있으면 실행 중 action으로 승격하고, 없으면 pending action을
+    해제한다. 일반 미션 action은 같은 controller 상태에서
     즉시 재발급하지 않으며 request=NONE 뒤 억제를 해제한다. 반복 관측용
     FINE_ADJUST_HOLD(14)는 예외로 DONE 뒤 같은 요청도 새 ID로 발급한다.
 
-ACK/DONE은 feedback.action_id가 현재 pending_action_id_와 같을 때만 반영된다.
+ACK/READY/DONE은 feedback.action_id가 현재 실행 또는 예약 ID와 맞을 때만
+반영된다.
 
 일반 Mission action은 DONE 뒤 controller가 request=NONE을 출력할 때까지 같은
 action을 억제한다. FINE_ADJUST_HOLD와 P2P locomotion action은 반복 가능하므로
@@ -440,7 +601,8 @@ P2P backend
 kP2pAction에서는 명시적인 controller action_request를 먼저 처리한 뒤, 요청이
 없을 때만 최종 velocity를 P2pMotionQuantizer로 보낸다. 정지/RL_STOPPING은 새
 보행 ACTION을 만들지 않는 HOLD가 되고, 0이 아닌 속도는 LOCOMOTION ACTION이 된다.
-pending action은 종류와 무관하게 하나만 허용하므로 미션/보행 동작이 겹치지 않는다.
+실행 중 action은 하나이며 긴 라인 보행에서만 다음 locomotion action 하나를
+미리 예약할 수 있다. 미션/보행 동작은 동시에 실행되지 않는다.
 ROS는 action을 실행하고, MuJoCo는 kVelocityCompatible일 때 pre_p2p_motion을
 사용할 수 있다. 두 실행기 모두 같은 action_id에 ACK/DONE을 반환하므로 FSM은 같다.
 

@@ -110,6 +110,8 @@ void GoalController::SetHasBall(bool has_ball) {
   if (!has_ball) {
     has_ball_ = false;
     goal_entry_armed_ = false;
+    post_pickup_line_wait_active_ = false;
+    post_pickup_line_wait_start_sec_ = 0.0;
     if (mode_ == GoalMode::kLineFollow) ball_consumed_ = false;
     return;
   }
@@ -118,6 +120,8 @@ void GoalController::SetHasBall(bool has_ball) {
     // 공을 들기 전에 보였던 골대 이력으로 즉시 진입하지 않고, 보유 상태가
     // 켜진 뒤의 프레임만 안정 검출 조건에 사용한다.
     ClearTracking();
+    post_pickup_line_wait_active_ = false;
+    post_pickup_line_wait_start_sec_ = 0.0;
   }
 }
 
@@ -131,6 +135,10 @@ void GoalController::UpdateBallState(const BallResult &ball_result) {
     ClearTracking();
   }
   goal_entry_armed_ = should_arm;
+  if (!should_arm) {
+    post_pickup_line_wait_active_ = false;
+    post_pickup_line_wait_start_sec_ = 0.0;
+  }
 }
 
 GoalResult GoalController::Compute(
@@ -165,12 +173,25 @@ GoalResult GoalController::Compute(
   (void)goal_target;
   UpdateGoalTracker(backboard_target, image_width, image_height);
   UpdatePoseTracker(backboard_target, goal_pose);
-  // 공을 실제로 들고 라인을 걷는 중에 거리 검증된 백보드가 연속 프레임
-  // 조건을 만족했을 때 골대 미션을 잠근다.
-  if (mode_ == GoalMode::kLineFollow && has_ball_ && goal_entry_armed_ &&
-      tracked_.stable && tracked_.visible) {
-    mode_ = GoalMode::kPostPickupWait;
-    state_enter_sec_ = now_sec;
+  // 공 미션이 완전히 끝나고 라인을 다시 잡은 뒤에는 백보드가 아직 보이지
+  // 않아도 LINE_FOLLOW를 유지한 채 시간을 잰다. 라인을 다시 잃으면 타이머를
+  // 처음부터 다시 시작해 고개를 든 채 잘못된 방향으로 진입하지 않게 한다.
+  if (mode_ == GoalMode::kLineFollow && has_ball_ && goal_entry_armed_) {
+    if (!line_reference_valid) {
+      post_pickup_line_wait_active_ = false;
+      post_pickup_line_wait_start_sec_ = 0.0;
+    } else {
+      if (!post_pickup_line_wait_active_) {
+        post_pickup_line_wait_active_ = true;
+        post_pickup_line_wait_start_sec_ = now_sec;
+      }
+      if (now_sec - post_pickup_line_wait_start_sec_ + kTimeEpsilon >=
+          std::max(0.0, config_.post_pickup_wait_sec)) {
+        post_pickup_line_wait_active_ = false;
+        mode_ = GoalMode::kTiltCameraToGoal;
+        state_enter_sec_ = now_sec;
+      }
+    }
   }
   GoalResult result;
   result.mode = mode_;
@@ -208,6 +229,7 @@ GoalResult GoalController::Compute(
       state_enter_sec_ = now_sec;
       ClearTracking();
       result.mode = mode_;
+      result.command = {};
       result.camera_request = CameraRequest::kNone;
       result.tracked = {};
       result.pose = {};
@@ -218,7 +240,9 @@ GoalResult GoalController::Compute(
     return result;
   case GoalMode::kSearch:
     result.active = true;
-    result.command = {0.0, 0.0, config_.search_wz};
+    // 카메라를 골대 시야로 올린 뒤에는 제자리회전을 새로 만들지 않고,
+    // 현재 자세에서 거리 검증된 백보드의 안정 검출을 기다린다.
+    result.command = {};
     if (PoseReadyForFineAdjust()) {
       mode_ = action_feedback.enabled ? GoalMode::kRlStopping
                                       : GoalMode::kFineAdjust;
@@ -262,7 +286,7 @@ GoalResult GoalController::Compute(
       state_enter_sec_ = now_sec;
       ClearTracking();
       result.mode = mode_;
-      result.command = {0.0, 0.0, config_.search_wz};
+      result.command = {};
       return result;
     }
     return result;
@@ -330,7 +354,7 @@ GoalResult GoalController::Compute(
       ResetFineMotion();
       result.command = tracked_.visible
                            ? ComputeApproachCommand()
-                           : MotionCommand{0.0, 0.0, config_.search_wz};
+                           : MotionCommand{};
       return result;
     }
     const int aligned_hits = static_cast<int>(std::count(
@@ -368,6 +392,8 @@ GoalResult GoalController::Compute(
       has_ball_ = false;
       ball_consumed_ = true;
       goal_entry_armed_ = false;
+      post_pickup_line_wait_active_ = false;
+      post_pickup_line_wait_start_sec_ = 0.0;
       mode_ = GoalMode::kReturnCameraToLine;
       state_enter_sec_ = now_sec;
       ClearTracking();
@@ -653,6 +679,8 @@ void GoalController::Reset() {
   has_ball_ = false;
   ball_consumed_ = false;
   goal_entry_armed_ = false;
+  post_pickup_line_wait_active_ = false;
+  post_pickup_line_wait_start_sec_ = 0.0;
   shoot_yaw_rad_ = 0.0;
   ResetFineMotion();
   ClearTracking();
@@ -667,11 +695,11 @@ ROS 통합 명령표 (ActionExecutionFeedback.enabled=true)
 LINE_FOLLOW(0)
   -> VELOCITY, LINE(1), 0, line controller의 vx/vy/wz, NONE, NONE
 GOAL_POST_PICKUP_WAIT(1)
-  -> VELOCITY, GOAL(3), 1, 0/0/0, NONE, NONE
+  -> 외부 mode 숫자 호환용. 현재 새 실행에서는 LINE_FOLLOW 내부 타이머를 쓴다.
 CAMERA_TILT_TO_GOAL_VIEW(2)
   -> VELOCITY, GOAL(3), 2, camera_tilt_forward_vx/0/0, NONE, GOAL(3)
 GOAL_SEARCH(3)
-  -> VELOCITY, GOAL(3), 3, 0/0/search_wz, NONE, NONE
+  -> VELOCITY, GOAL(3), 3, 0/0/0, NONE, NONE
 GOAL_APPROACH(4)
   -> VELOCITY, GOAL(3), 4, ComputeApproachCommand(), NONE, NONE
 GOAL_RL_STOPPING(9)

@@ -10,6 +10,8 @@ namespace vision_core {
 
 enum class GoalMode {
   kLineFollow = 0,
+  // 외부 숫자 호환을 위해 보존한다. 현재 post-pickup 대기는 LINE_FOLLOW를
+  // 유지한 채 내부 타이머로 처리하므로 새 실행에서는 이 상태에 진입하지 않는다.
   kPostPickupWait = 1,
   kTiltCameraToGoal = 2,
   kSearch = 3,
@@ -35,11 +37,14 @@ struct GoalConfig {
   int stable_min_hits{};
   int lost_frames{};
   double smooth_alpha{};
-  // 공 보유 + 거리 검증된 백보드 안정 검출 뒤 추가로 기다릴 시간이다.
+  // 공 미션 종료와 라인 재획득 뒤, 라인을 계속 추종하며 카메라를 들기 전까지
+  // 기다릴 시간이다. 이 구간에는 백보드 검출을 요구하지 않는다.
   double post_pickup_wait_sec{};
   double camera_motion_timeout_sec{};
   // 골대 시야로 카메라를 올리는 동안 라인 방향으로 계속 직진한다.
   double camera_tilt_forward_vx{};
+  // 외부 설정 호환을 위해 보존한다. 현재 백보드 search는 제자리회전 없이
+  // 정지 관측하므로 사용하지 않는다.
   double search_wz{};
   double target_u_norm{};
   // 골대 앞에서는 항상 저속으로 접근한다.
@@ -135,8 +140,8 @@ class GoalController {
 public:
   GoalController();
   explicit GoalController(const GoalConfig &config);
-  // 호환 API: 공 보유 상태만 켠다. 실제 골대 미션은 안정적으로 골대가
-  // 검출될 때 시작한다.
+  // 호환 API: 공 보유 상태와 골대 진입 준비를 켠다. 실제 골대 미션은 라인을
+  // 재획득한 뒤 post_pickup_wait_sec 동안 라인 추종을 유지하고 시작한다.
   void StartAfterPickup(double now_sec);
   void SetHasBall(bool has_ball);
   // 매 프레임 BallResult를 연결할 때 사용한다. 공 미션이 LINE_FOLLOW까지
@@ -206,6 +211,8 @@ private:
   bool has_ball_{false};
   bool ball_consumed_{false};
   bool goal_entry_armed_{false};
+  bool post_pickup_line_wait_active_{false};
+  double post_pickup_line_wait_start_sec_{0.0};
 };
 
 } // namespace vision_core

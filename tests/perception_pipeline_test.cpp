@@ -174,10 +174,10 @@ void TestMissionPerceptionCapiUsesSharedPipeline() {
   detections[2].right_depth_m = 0.75;
 
   const VisionMissionFrameResult result =
-      vision_mission_controller_step_perception_v1(
+      vision_mission_controller_step_perception_v2(
           handle, detections, 3, 100.0, 100.0, 50.0, 50.0,
           1, 1, 0.1, 0.0, 0.0, 0.0, 100, 100, 0.0,
-          static_cast<int>(CameraMode::kForward), 1, 1, 0, 0, 0);
+          static_cast<int>(CameraMode::kForward), 1, 1, 0, 0, 0, 0);
   assert(result.raw_line_count == 2);
   assert(result.rectified_line_count == 2);
   assert(result.imu_rectification_applied == 1);

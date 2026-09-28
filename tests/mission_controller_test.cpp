@@ -49,8 +49,6 @@ MissionControllerConfig FastConfig() {
   config.hurdle.tilt_trigger_v_norm = 0.95;
   config.goal.stable_window = 1;
   config.goal.stable_min_hits = 1;
-  // 진입 프레임에서 POST_PICKUP_WAIT를 관찰하려는 테스트이므로 production
-  // 기본값(0초)과 달리 한 프레임 안에 다음 상태로 통과하지 않게 한다.
   config.goal.post_pickup_wait_sec = 1.0;
   return config;
 }
@@ -88,15 +86,30 @@ void TestHurdleEntryHasPriorityOverBall() {
 void TestCarryingBallAllowsOnlyGoalEntry() {
   auto config = FastConfig();
   config.initial_has_ball = true;
+  config.line.line_stable_window = 1;
+  config.line.line_stable_min_hits = 1;
   MissionController controller(config);
   auto input = Frame(0.0);
   input.ball_target = Target(1, 0.5, 0.5);
   input.hurdle_target = Target(4, 0.5, 0.7);
-  // goal class가 없어도 검증된 backboard만으로 골대 미션에 진입한다.
-  input.backboard_target = Target(3, 0.5, 0.4);
-  const auto result = controller.Step(input);
+  // 공을 들고 라인을 다시 잡으면 ball/hurdle 후보를 무시하고, 백보드가
+  // 아직 없어도 설정 시간 동안 라인 미션을 계속한다.
+  auto result = controller.Step(input);
+  assert(result.active_mission == MissionType::kLine);
+  assert(result.goal.mode == GoalMode::kLineFollow);
+  assert(result.line_computed);
+
+  input = Frame(0.99);
+  result = controller.Step(input);
+  assert(result.active_mission == MissionType::kLine);
+  assert(result.goal.mode == GoalMode::kLineFollow);
+
+  // 연속 라인 추종 시간이 끝나면 백보드 선행 검출 없이 카메라를 든다.
+  input = Frame(1.0);
+  result = controller.Step(input);
   assert(result.active_mission == MissionType::kGoal);
-  assert(result.goal.mode == GoalMode::kPostPickupWait);
+  assert(result.goal.mode == GoalMode::kTiltCameraToGoal);
+  assert(result.goal.camera_request == CameraRequest::kGoal);
   assert(result.hurdle.mode == HurdleMode::kLineFollow);
   assert(result.ball.mode == BallMode::kLineFollow);
 }
@@ -133,8 +146,8 @@ void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
   assert(result.command.action_id == 500);
   assert(result.command.pre_p2p_motion.vx == first_pre_p2p.vx);
 
-  // 긴 action 후반에는 오른쪽으로 치우친 line을 관측한다. DONE 프레임 자체는
-  // 다시 중앙선이지만, 다음 판단은 후반 누적 특징을 사용해야 한다.
+  // 긴 action 후반에는 오른쪽으로 치우친 line을 관측한다. READY 프레임
+  // 자체는 다시 중앙선이지만, 예약 판단은 후반 누적 특징을 사용해야 한다.
   input = Frame(0.2);
   for (auto &point : input.line_centers) point.u = 70.0;
   input.delivery_feedback = {500, false, false};
@@ -148,11 +161,18 @@ void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
   assert(result.command.action_id == 500);
 
   input = Frame(0.4);
-  input.delivery_feedback = {500, true, true};
+  input.delivery_feedback = {500, true, false, true};
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
   assert(result.command.action_id == 501);
   assert(result.command.action == MissionAction::kWalkForwardRightSix);
+
+  // 현재 action의 실제 DONE 뒤에는 예약 action이 실행 중 action으로 승격된다.
+  input = Frame(0.5);
+  input.delivery_feedback = {500, true, true, false};
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kAction);
+  assert(result.command.action_id == 501);
 }
 
 void TestShortLineActionCollectsForOneSecondAfterDone() {

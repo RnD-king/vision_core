@@ -819,6 +819,26 @@ VisionMissionFrameResult vision_mission_controller_step_perception_v1(
     int camera_actual_mode, int camera_settled,
     int command_transport_enabled,
     uint64_t feedback_action_id, int action_acknowledged, int action_done) {
+  return vision_mission_controller_step_perception_v2(
+      handle, detections, detection_count, fx, fy, cx, cy,
+      enable_imu_rectification, imu_valid, roll_rad, pitch_rad, previous_vx,
+      previous_wz, image_width, image_height, now_sec, camera_actual_mode,
+      camera_settled, command_transport_enabled, feedback_action_id,
+      action_acknowledged, action_done, 0);
+}
+
+VisionMissionFrameResult vision_mission_controller_step_perception_v2(
+    VisionMissionControllerHandle handle,
+    const VisionPerceptionDetection *detections, int detection_count,
+    double fx, double fy, double cx, double cy,
+    int enable_imu_rectification, int imu_valid,
+    double roll_rad, double pitch_rad,
+    double previous_vx, double previous_wz,
+    int image_width, int image_height, double now_sec,
+    int camera_actual_mode, int camera_settled,
+    int command_transport_enabled,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done,
+    int action_ready) {
   auto *controller = static_cast<vision_core::MissionController *>(handle);
   if (controller == nullptr) return {};
 
@@ -858,7 +878,8 @@ VisionMissionFrameResult vision_mission_controller_step_perception_v1(
       ToCameraFeedback(camera_actual_mode, camera_settled);
   input.command_transport_enabled = command_transport_enabled != 0;
   input.delivery_feedback = {
-      feedback_action_id, action_acknowledged != 0, action_done != 0};
+      feedback_action_id, action_acknowledged != 0, action_done != 0,
+      action_ready != 0};
 
   const auto result = controller->StepPerception(input);
   VisionMissionFrameResult output{};

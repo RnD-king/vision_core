@@ -125,7 +125,11 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
       const bool pending_line_locomotion =
           last_command_.action_id != 0 &&
           last_command_.mission == MissionType::kLine &&
-          last_command_.action_category == ActionCategory::kLocomotion;
+          last_command_.action_category == ActionCategory::kLocomotion &&
+          last_command_.control_phase !=
+              ControlPhase::kWaitingQueuedActionAck &&
+          last_command_.control_phase !=
+              ControlPhase::kWaitingQueuedActionStart;
       const bool matching_feedback =
           pending_line_locomotion && input.delivery_feedback.action_id != 0 &&
           input.delivery_feedback.action_id == last_command_.action_id;
@@ -149,10 +153,12 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
         }
       } else if (long_action) {
         const bool collection_started =
-            last_command_.control_phase == ControlPhase::kWaitingActionDone ||
+            ready_line_action_id_ != last_command_.action_id &&
+            (last_command_.control_phase == ControlPhase::kWaitingActionDone ||
             (matching_feedback &&
              (input.delivery_feedback.acknowledged ||
-              input.delivery_feedback.done));
+              input.delivery_feedback.ready ||
+              input.delivery_feedback.done)));
         if (collection_started &&
             !line_guide_accumulator_.ActiveFor(last_command_.action_id)) {
           line_guide_accumulator_.Begin(last_command_.action_id,
@@ -162,11 +168,16 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
           line_guide_accumulator_.Add(last_command_.action_id, input.now_sec,
                                       output.line_features.guide);
         }
-        if (matching_feedback && input.delivery_feedback.done) {
+        if (matching_feedback &&
+            (input.delivery_feedback.ready || input.delivery_feedback.done) &&
+            ready_line_action_id_ != last_command_.action_id) {
           const auto accumulated =
               line_guide_accumulator_.Finish(last_command_.action_id,
                                              input.now_sec);
           if (accumulated) decision_guide = *accumulated;
+          if (input.delivery_feedback.ready) {
+            ready_line_action_id_ = last_command_.action_id;
+          }
         }
       } else if (pending_line_locomotion && matching_feedback &&
                  input.delivery_feedback.done) {
@@ -318,12 +329,17 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
 
   output.command = command_coordinator_.Compute(
       ball_result_, hurdle_result_, goal_result_, output.line_command,
-      input.delivery_feedback);
+      input.delivery_feedback, input.now_sec);
+  if (input.delivery_feedback.done &&
+      input.delivery_feedback.action_id == ready_line_action_id_) {
+    ready_line_action_id_ = 0;
+  }
   if (output.command.mission != MissionType::kLine) {
     line_guide_accumulator_.Reset();
     short_line_collection_active_ = false;
     short_line_collection_action_id_ = 0;
     short_line_collection_end_sec_ = 0.0;
+    ready_line_action_id_ = 0;
   }
   last_command_ = output.command;
   output.active_mission = output.command.mission;
@@ -505,6 +521,7 @@ void MissionController::Reset() {
   short_line_collection_active_ = false;
   short_line_collection_action_id_ = 0;
   short_line_collection_end_sec_ = 0.0;
+  ready_line_action_id_ = 0;
   ball_result_ = {};
   hurdle_result_ = {};
   goal_result_ = {};

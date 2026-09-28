@@ -70,14 +70,17 @@ void TestGoalApproachFineAlignAndReturnSequence() {
   auto result = controller.Compute(std::nullopt, std::nullopt, {}, 100, 100,
                                    0.0, false, LineView());
   assert(result.mode == GoalMode::kLineFollow);
-  result = controller.Compute(std::nullopt, backboard, {}, 100, 100, 0.0,
-                              false, LineView());
-  assert(result.mode == GoalMode::kPostPickupWait);
-  result = controller.Compute(std::nullopt, backboard, {}, 100, 100, 1.99,
-                              false, LineView());
-  assert(result.mode == GoalMode::kPostPickupWait);
-  result = controller.Compute(std::nullopt, backboard, {}, 100, 100, 2.0,
-                              false, LineView());
+  // 백보드가 없어도 라인을 재획득한 순간부터 LINE_FOLLOW 상태에서
+  // post-pickup 시간을 센다. 이 동안에는 MissionController가 라인 명령을
+  // 계속 사용한다.
+  result = controller.Compute(std::nullopt, std::nullopt, {}, 100, 100, 0.0,
+                              true, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+  result = controller.Compute(std::nullopt, std::nullopt, {}, 100, 100, 1.99,
+                              true, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+  result = controller.Compute(std::nullopt, std::nullopt, {}, 100, 100, 2.0,
+                              true, LineView());
   assert(result.mode == GoalMode::kTiltCameraToGoal);
   assert(result.camera_request == CameraRequest::kGoal);
 
@@ -90,6 +93,9 @@ void TestGoalApproachFineAlignAndReturnSequence() {
   result = controller.Compute(
       std::nullopt, 100, 100, 2.2, false, GoalView());
   assert(result.mode == GoalMode::kSearch);
+  assert(result.command.vx == 0.0);
+  assert(result.command.vy == 0.0);
+  assert(result.command.wz == 0.0);
 
   result = controller.Compute(goal, backboard, Pose(0.0, 1.50, 0.0),
                               100, 100, 2.22, false, GoalView());
@@ -177,11 +183,12 @@ void TestApproachContinuesWithBackboardOnly() {
   cfg.stable_window = 1;
   cfg.stable_min_hits = 1;
   cfg.smooth_alpha = 1.0;
+  cfg.post_pickup_wait_sec = 0.0;
   GoalController controller(cfg);
   controller.StartAfterPickup(0.0);
   const auto backboard = BackboardTarget();
   auto result = controller.Compute(std::nullopt, backboard, {}, 100, 100,
-                                   0.0, false, LineView());
+                                   0.0, true, LineView());
   assert(result.mode == GoalMode::kTiltCameraToGoal);
   result = controller.Compute(std::nullopt, backboard, {}, 100, 100, 0.1,
                               false, GoalView());
@@ -207,6 +214,7 @@ void TestFineAdjustUsesActionHoldInsteadOfRlVelocity() {
   cfg.stable_min_hits = 1;
   cfg.smooth_alpha = 1.0;
   cfg.rl_stop_duration_sec = 0.5;
+  cfg.post_pickup_wait_sec = 0.0;
   GoalController controller(cfg);
   controller.StartAfterPickup(0.0);
   const auto goal = Target(0.50, 0.30);
@@ -216,7 +224,7 @@ void TestFineAdjustUsesActionHoldInsteadOfRlVelocity() {
   const ActionExecutionFeedback done{true, true, false};
 
   auto result = controller.Compute(std::nullopt, backboard, {}, 100, 100, 0.0,
-                                   false, LineView(), waiting);
+                                   true, LineView(), waiting);
   assert(result.mode == GoalMode::kTiltCameraToGoal);
   result = controller.Compute(std::nullopt, backboard, {}, 100, 100, 0.1,
                               false, GoalView(), waiting);
@@ -275,13 +283,21 @@ void TestGoalStartsOnlyAfterCarryingBallAndBallMissionEnds() {
   result = controller.Compute(goal, 100, 100, 0.3, false, LineView());
   assert(result.mode == GoalMode::kLineFollow);
 
-  // Ball mode가 완전히 끝난 시점부터 골대 안정화 프레임을 새로 센다.
+  // Ball mode가 완전히 끝나도 라인을 못 잡았으면 타이머를 시작하지 않는다.
   ball.mode = BallMode::kLineFollow;
   controller.UpdateBallState(ball);
-  result = controller.Compute(goal, 100, 100, 0.4, true, LineView());
+  result = controller.Compute(std::nullopt, 100, 100, 0.4, false, LineView());
   assert(result.mode == GoalMode::kLineFollow);
-  result = controller.Compute(goal, 100, 100, 0.5, true, LineView());
-  assert(result.mode == GoalMode::kPostPickupWait);
+
+  // 라인을 재획득하면 백보드 검출 없이도 타이머를 시작하며 그동안에는
+  // LINE_FOLLOW를 유지한다. N초가 지나면 카메라를 골대 시야로 올린다.
+  result = controller.Compute(std::nullopt, 100, 100, 0.5, true, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+  result = controller.Compute(std::nullopt, 100, 100, 1.49, true, LineView());
+  assert(result.mode == GoalMode::kLineFollow);
+  result = controller.Compute(std::nullopt, 100, 100, 1.5, true, LineView());
+  assert(result.mode == GoalMode::kTiltCameraToGoal);
+  assert(result.camera_request == CameraRequest::kGoal);
 }
 
 } // namespace

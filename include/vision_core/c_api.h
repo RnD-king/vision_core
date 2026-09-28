@@ -423,6 +423,20 @@ VisionMissionFrameResult vision_mission_controller_step_perception_v1(
     int camera_actual_mode, int camera_settled,
     int command_transport_enabled,
     uint64_t feedback_action_id, int action_acknowledged, int action_done);
+// v1을 보존하면서 READY 전달만 끝에 추가한 ABI다. simulator는 READY를
+// 반환해 ROS와 동일하게 다음 긴 라인 action을 선행 예약할 수 있다.
+VisionMissionFrameResult vision_mission_controller_step_perception_v2(
+    VisionMissionControllerHandle handle,
+    const VisionPerceptionDetection *detections, int detection_count,
+    double fx, double fy, double cx, double cy,
+    int enable_imu_rectification, int imu_valid,
+    double roll_rad, double pitch_rad,
+    double previous_vx, double previous_wz,
+    int image_width, int image_height, double now_sec,
+    int camera_actual_mode, int camera_settled,
+    int command_transport_enabled,
+    uint64_t feedback_action_id, int action_acknowledged, int action_done,
+    int action_ready);
 void vision_mission_controller_reset(VisionMissionControllerHandle handle);
 
 #ifdef __cplusplus
