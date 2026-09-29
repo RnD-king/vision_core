@@ -213,6 +213,13 @@ enum class MissionAction {
   kWalkRightTwo = 23,
   kTurnLeftInPlace = 24,
   kTurnRightInPlace = 25,
+  // 중간 크기 조향에서 사용하는 4걸음 곡선 보행이다. 기존 action 번호를
+  // 바꾸지 않기 위해 새 코드로 추가한다.
+  kWalkForwardLeftFour = 26,
+  kWalkForwardRightFour = 27,
+  // 라인 명령이 deadband 안에 들어왔을 때 자세를 유지하며 다음 관측을
+  // 기다리는 2초 정지 primitive다.
+  kHoldPoseTwo = 28,
 };
 
 // action 숫자는 하나의 ROS 토픽으로 전달하지만, 생성 원인과 DONE 처리 규칙은
@@ -288,7 +295,7 @@ struct ControlCommand {
   ActionCategory action_category{ActionCategory::kNone};
   ActionExecutionKind action_execution_kind{ActionExecutionKind::kNone};
   std::uint64_t action_id{0};
-  // SHOOT의 몸통 목표각 또는 좌/우 6걸음 복합 보행 전에 적용할 제자리회전
+  // SHOOT의 몸통 목표각 또는 제자리회전/좌·우 6걸음 복합 보행에 적용할
   // 목표각이다. 로봇 yaw 기준 좌회전(+), 우회전(-)이며 그 외에는 0이다.
   double action_yaw_rad{0.0};
   CameraRequest camera_request{CameraRequest::kNone};

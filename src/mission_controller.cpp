@@ -12,7 +12,9 @@ namespace {
 bool IsLongLineLocomotionAction(MissionAction action) {
   return action == MissionAction::kWalkForwardSix ||
          action == MissionAction::kWalkForwardLeftSix ||
-         action == MissionAction::kWalkForwardRightSix;
+         action == MissionAction::kWalkForwardRightSix ||
+         action == MissionAction::kWalkForwardLeftFour ||
+         action == MissionAction::kWalkForwardRightFour;
 }
 } // namespace
 
@@ -87,6 +89,8 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
     std::optional<double> line_image_center_u) {
   MissionFrameResult output;
   bool line_reference_valid = false;
+  bool allow_new_line_locomotion_action =
+      input.allow_new_line_locomotion_action;
   ActionExecutionFeedback action_feedback = input.action_feedback;
   if (input.command_transport_enabled) {
     const bool pending_mission_action =
@@ -120,7 +124,9 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
     if (config_.command.locomotion_backend ==
             LocomotionBackend::kP2pAction &&
         active_mission_ == MissionType::kLine) {
-      LineGuide decision_guide = output.line_features.guide;
+      LineGuide decision_guide = input.line_decision_guide_override
+                                     ? *input.line_decision_guide_override
+                                     : output.line_features.guide;
       bool force_line_hold = false;
       const bool pending_line_locomotion =
           last_command_.action_id != 0 &&
@@ -179,7 +185,8 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
             ready_line_action_id_ = last_command_.action_id;
           }
         }
-      } else if (pending_line_locomotion && matching_feedback &&
+      } else if (input.allow_new_line_locomotion_action &&
+                 pending_line_locomotion && matching_feedback &&
                  input.delivery_feedback.done) {
         // 짧은 2걸음/제자리회전은 흔들림이 멎은 뒤의 관측으로 다음 동작을
         // 정한다. DONE 프레임부터 고정 시간 동안 정지하며 전체 표본을 모은다.
@@ -216,6 +223,7 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
                                 ? MotionCommand{}
                                 : (decision_guide.valid ? p2p_command
                                                         : velocity_command);
+      if (force_line_hold) allow_new_line_locomotion_action = false;
     }
     output.line_computed = true;
   };
@@ -329,7 +337,8 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
 
   output.command = command_coordinator_.Compute(
       ball_result_, hurdle_result_, goal_result_, output.line_command,
-      input.delivery_feedback, input.now_sec);
+      input.delivery_feedback, input.now_sec,
+      allow_new_line_locomotion_action);
   if (input.delivery_feedback.done &&
       input.delivery_feedback.action_id == ready_line_action_id_) {
     ready_line_action_id_ = 0;
@@ -501,8 +510,25 @@ MissionController::StepPerception(const PerceptionFrameInput &input) {
   prepared.command_transport_enabled = input.command_transport_enabled;
   prepared.action_feedback = input.action_feedback;
   prepared.delivery_feedback = input.delivery_feedback;
+  prepared.allow_new_line_locomotion_action =
+      input.allow_new_line_locomotion_action;
+  prepared.line_decision_guide_override =
+      input.line_decision_guide_override;
   output.mission = StepWithLineImageCenter(prepared, line_image_center_u);
   return output;
+}
+
+bool MissionController::UpdateLineP2pTuning(
+    const LineP2pConfig &line_p2p,
+    const P2pMotionConfig &normal_p2p) {
+  if (last_command_.action_id != 0 || short_line_collection_active_) {
+    return false;
+  }
+  config_.line_p2p = line_p2p;
+  config_.command.p2p = normal_p2p;
+  line_p2p_controller_ = LineP2pController(config_.line_p2p, config_.line);
+  command_coordinator_.UpdateNormalP2pConfig(config_.command.p2p);
+  return true;
 }
 
 void MissionController::Reset() {

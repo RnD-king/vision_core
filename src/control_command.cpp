@@ -76,6 +76,7 @@ ActionExecutionKind ExecutionKindForMissionAction(MissionAction action) {
   case MissionAction::kTurnRight:
     return ActionExecutionKind::kVelocityCompatible;
   case MissionAction::kFineAdjustHold:
+  case MissionAction::kHoldPoseTwo:
     return ActionExecutionKind::kStationary;
   case MissionAction::kPickupBall:
   case MissionAction::kStandUp:
@@ -96,6 +97,8 @@ ActionExecutionKind ExecutionKindForMissionAction(MissionAction action) {
   case MissionAction::kWalkRightTwo:
   case MissionAction::kTurnLeftInPlace:
   case MissionAction::kTurnRightInPlace:
+  case MissionAction::kWalkForwardLeftFour:
+  case MissionAction::kWalkForwardRightFour:
     break;
   }
   return ActionExecutionKind::kNone;
@@ -182,16 +185,26 @@ bool IsRlStopping(MissionType mission, const BallResult &ball,
 bool IsLongLineLocomotionAction(MissionAction action) {
   return action == MissionAction::kWalkForwardSix ||
          action == MissionAction::kWalkForwardLeftSix ||
-         action == MissionAction::kWalkForwardRightSix;
+         action == MissionAction::kWalkForwardRightSix ||
+         action == MissionAction::kWalkForwardLeftFour ||
+         action == MissionAction::kWalkForwardRightFour;
+}
+
+ActionExecutionKind ExecutionKindForLocomotionAction(MissionAction action) {
+  return action == MissionAction::kHoldPoseTwo
+             ? ActionExecutionKind::kStationary
+             : ActionExecutionKind::kVelocityCompatible;
 }
 
 double LocomotionTargetYawRad(MissionAction action,
                               const MotionCommand &command) {
   if (!std::isfinite(command.wz)) return 0.0;
-  if (action == MissionAction::kWalkForwardLeftSix) {
+  if (action == MissionAction::kWalkForwardLeftSix ||
+      action == MissionAction::kTurnLeftInPlace) {
     return std::abs(command.wz);
   }
-  if (action == MissionAction::kWalkForwardRightSix) {
+  if (action == MissionAction::kWalkForwardRightSix ||
+      action == MissionAction::kTurnRightInPlace) {
     return -std::abs(command.wz);
   }
   return 0.0;
@@ -267,7 +280,8 @@ ControlCommand ControlCommandCoordinator::Compute(
 ControlCommand ControlCommandCoordinator::Compute(
     const BallResult &ball_result, const HurdleResult &hurdle_result,
     const GoalResult &goal_result, const MotionCommand &line_candidate,
-    const CommandDeliveryFeedback &feedback, double now_sec) {
+    const CommandDeliveryFeedback &feedback, double now_sec,
+    bool allow_new_line_locomotion_action) {
   compute_time_valid_ = std::isfinite(now_sec);
   compute_now_sec_ = compute_time_valid_ ? now_sec : 0.0;
 
@@ -380,7 +394,8 @@ ControlCommand ControlCommandCoordinator::Compute(
   }
 
   if (pending_action_id_ != 0) {
-    if (queued_action_id_ == 0 && pending_ready_ &&
+    if (allow_new_line_locomotion_action && queued_action_id_ == 0 &&
+        pending_ready_ &&
         command.mission == MissionType::kLine &&
         pending_action_category_ == ActionCategory::kLocomotion &&
         IsLongLineLocomotionAction(pending_action_)) {
@@ -452,6 +467,13 @@ ControlCommand ControlCommandCoordinator::Compute(
     command.velocity = {};
   } else if (config_.locomotion_backend ==
              LocomotionBackend::kP2pAction) {
+    if (!allow_new_line_locomotion_action &&
+        command.mission == MissionType::kLine) {
+      command.command_type = CommandType::kHold;
+      command.velocity = {};
+      command.pre_p2p_motion = {};
+      return command;
+    }
     const LocomotionAction locomotion =
         p2p_quantizer_.Quantize(command.velocity, command.mission,
                                 command.mission_phase);
@@ -461,7 +483,8 @@ ControlCommand ControlCommandCoordinator::Compute(
     } else {
       return BeginAction(command, ToActionCode(locomotion),
                          ActionCategory::kLocomotion,
-                         ActionExecutionKind::kVelocityCompatible,
+                         ExecutionKindForLocomotionAction(
+                             ToActionCode(locomotion)),
                          LocomotionTargetYawRad(ToActionCode(locomotion),
                                                 command.pre_p2p_motion));
     }
@@ -469,6 +492,14 @@ ControlCommand ControlCommandCoordinator::Compute(
     command.command_type = CommandType::kVelocity;
   }
   return command;
+}
+
+void ControlCommandCoordinator::UpdateNormalP2pConfig(
+    const P2pMotionConfig &config) {
+  config_.p2p = config;
+  p2p_quantizer_ =
+      P2pMotionQuantizer(config_.p2p, config_.p2p_fine,
+                         config_.p2p_recovery);
 }
 
 void ControlCommandCoordinator::Reset() {

@@ -30,6 +30,12 @@ enum class LocomotionAction : std::uint16_t {
       static_cast<std::uint16_t>(MissionAction::kTurnLeftInPlace),
   kTurnRightInPlace =
       static_cast<std::uint16_t>(MissionAction::kTurnRightInPlace),
+  kWalkForwardLeftFour =
+      static_cast<std::uint16_t>(MissionAction::kWalkForwardLeftFour),
+  kWalkForwardRightFour =
+      static_cast<std::uint16_t>(MissionAction::kWalkForwardRightFour),
+  kHoldPoseTwo =
+      static_cast<std::uint16_t>(MissionAction::kHoldPoseTwo),
 };
 
 struct P2pMotionConfig {
@@ -40,8 +46,12 @@ struct P2pMotionConfig {
 
   // 전진속도가 이 값 이상이면 2걸음 대신 6걸음 primitive를 선택한다.
   double long_forward_vx{};
-  // 전진 중 yaw가 이 값 이상이면 좌/우 곡선 primitive를 선택한다.
+  // 라인 고속 전진에서는 yaw가 이 값 이상이면 4걸음 곡선 보행을,
+  // 저속 전진에서는 제자리회전을 선택한다.
   double curve_yaw_threshold{};
+  // 라인 고속 전진에서 yaw가 이 값 이상이면 4걸음 곡선 대신
+  // 제자리회전 반복 + 직진 6걸음 복합 primitive를 선택한다.
+  double sharp_turn_yaw_threshold{};
   // 전후진이 이 값 이하인 회전 명령은 제자리 회전으로 취급한다.
   double turn_in_place_vx_max{};
   // |vy|가 |vx|의 이 배수보다 크면 전진보다 횡이동을 우선한다.

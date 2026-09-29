@@ -108,28 +108,40 @@ LocomotionAction P2pMotionQuantizer::QuantizeLineWithConfig(
   const double forward_deadband = std::max(0.0, config.forward_deadband);
   const double lateral_deadband = std::max(0.0, config.lateral_deadband);
   const double yaw_deadband = std::max(0.0, config.yaw_deadband);
+  // LOCAL TUNING OVERRIDE
+  // 기본은 config(YAML/ROS override)를 사용한다. 빠른 재빌드 실험 때만
+  // 원하는 우변을 숫자 literal로 바꾸고, 확정 뒤에는 config로 복구한다.
+  const double long_forward_vx =
+      std::max(forward_deadband, config.long_forward_vx);
+  const double curve_yaw_threshold =
+      std::max(yaw_deadband, config.curve_yaw_threshold);
+  const double sharp_turn_yaw_threshold =
+      std::max(curve_yaw_threshold, config.sharp_turn_yaw_threshold);
   const double vx = std::abs(command.vx) >= forward_deadband ? command.vx : 0.0;
   const double vy = std::abs(command.vy) >= lateral_deadband ? command.vy : 0.0;
   const double wz = std::abs(command.wz) >= yaw_deadband ? command.wz : 0.0;
 
   if (vx == 0.0 && vy == 0.0 && wz == 0.0) {
-    return LocomotionAction::kNone;
-  }
-  if (wz != 0.0 && std::abs(vx) <= std::max(0.0, config.turn_in_place_vx_max) &&
-      vy == 0.0) {
-    return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
-                    : LocomotionAction::kTurnRightInPlace;
+    return LocomotionAction::kHoldPoseTwo;
   }
   if (vx < 0.0) return LocomotionAction::kWalkBackwardTwo;
   if (vx > 0.0) {
-    const bool long_walk =
-        vx >= std::max(forward_deadband, config.long_forward_vx);
-    if (!long_walk) return LocomotionAction::kWalkForwardTwo;
-    const bool curved =
-        std::abs(wz) >= std::max(yaw_deadband, config.curve_yaw_threshold);
-    if (curved) {
+    const bool long_walk = vx >= long_forward_vx;
+    const double abs_wz = std::abs(wz);
+    if (!long_walk) {
+      if (abs_wz >= curve_yaw_threshold) {
+        return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
+                        : LocomotionAction::kTurnRightInPlace;
+      }
+      return LocomotionAction::kWalkForwardTwo;
+    }
+    if (abs_wz >= sharp_turn_yaw_threshold) {
       return wz > 0.0 ? LocomotionAction::kWalkForwardLeftSix
                       : LocomotionAction::kWalkForwardRightSix;
+    }
+    if (abs_wz >= curve_yaw_threshold) {
+      return wz > 0.0 ? LocomotionAction::kWalkForwardLeftFour
+                      : LocomotionAction::kWalkForwardRightFour;
     }
     return LocomotionAction::kWalkForwardSix;
   }

@@ -33,6 +33,8 @@ void LoadP2p(const YAML::Node &node, P2pMotionConfig &config) {
   Assign(node, "yaw_deadband", config.yaw_deadband);
   Assign(node, "long_forward_vx", config.long_forward_vx);
   Assign(node, "curve_yaw_threshold", config.curve_yaw_threshold);
+  Assign(node, "sharp_turn_yaw_threshold",
+         config.sharp_turn_yaw_threshold);
   Assign(node, "turn_in_place_vx_max", config.turn_in_place_vx_max);
   Assign(node, "lateral_dominance_ratio", config.lateral_dominance_ratio);
 }

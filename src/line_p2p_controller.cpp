@@ -22,10 +22,17 @@ MotionCommand LineP2pController::Compute(const LineGuide &guide) const {
     return {};
   }
 
-  const double offset_term = config_.offset_gain * guide.offset;
-  const double heading_term = config_.heading_gain * guide.heading_rad;
-  const double curvature_term =
-      config_.curvature_gain * guide.curvature_rad;
+  // LOCAL TUNING OVERRIDE
+  // 기본 상태에서는 YAML/ROS override가 들어간 config 값을 사용한다.
+  // 빠른 재빌드 실험이 필요할 때만 아래 우변 하나를 숫자 literal로 바꾼다.
+  // 예: const double offset_gain = 1.20;
+  const double offset_gain = config_.offset_gain;
+  const double heading_gain = config_.heading_gain;
+  const double curvature_gain = config_.curvature_gain;
+
+  const double offset_term = offset_gain * guide.offset;
+  const double heading_term = heading_gain * guide.heading_rad;
+  const double curvature_term = curvature_gain * guide.curvature_rad;
   const double steering = offset_term + heading_term + curvature_term;
   const double severity = std::abs(offset_term) + std::abs(heading_term) +
                           std::abs(curvature_term);

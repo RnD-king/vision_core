@@ -23,6 +23,8 @@ int main(int argc, char **argv) {
   assert(config.command.locomotion_backend ==
          vision_core::LocomotionBackend::kP2pAction);
   assert(std::abs(config.command.action_ack_timeout_sec - 10.0) < 1e-12);
+  assert(std::abs(config.command.p2p.sharp_turn_yaw_threshold - 0.30) <
+         1e-12);
   assert(std::abs(config.goal.post_pickup_wait_sec - 3.0) < 1e-12);
   assert(std::abs(config.command.p2p_fine.yaw_deadband - 0.03) < 1e-12);
   assert(std::abs(config.backboard_max_depth_m - 5.0) < 1e-12);

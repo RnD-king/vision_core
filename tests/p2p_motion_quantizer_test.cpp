@@ -61,8 +61,22 @@ int main() {
   // 재관측한다.
   assert(quantizer.Quantize({0.30, 0.0, 0.0}, MissionType::kLine, 0) ==
          LocomotionAction::kWalkForwardSix);
-  assert(quantizer.Quantize({0.10, 0.0, 0.20}, MissionType::kLine, 0) ==
+  assert(quantizer.Quantize({}, MissionType::kLine, 0) ==
+         LocomotionAction::kHoldPoseTwo);
+  assert(quantizer.Quantize({0.30, 0.0, 0.20}, MissionType::kLine, 0) ==
+         LocomotionAction::kWalkForwardLeftFour);
+  assert(quantizer.Quantize({0.30, 0.0, -0.20}, MissionType::kLine, 0) ==
+         LocomotionAction::kWalkForwardRightFour);
+  assert(quantizer.Quantize({0.30, 0.0, 0.30}, MissionType::kLine, 0) ==
+         LocomotionAction::kWalkForwardLeftSix);
+  assert(quantizer.Quantize({0.30, 0.0, -0.30}, MissionType::kLine, 0) ==
+         LocomotionAction::kWalkForwardRightSix);
+  assert(quantizer.Quantize({0.10, 0.0, 0.05}, MissionType::kLine, 0) ==
          LocomotionAction::kWalkForwardTwo);
+  assert(quantizer.Quantize({0.10, 0.0, 0.10}, MissionType::kLine, 0) ==
+         LocomotionAction::kTurnLeftInPlace);
+  assert(quantizer.Quantize({0.10, 0.0, -0.10}, MissionType::kLine, 0) ==
+         LocomotionAction::kTurnRightInPlace);
   assert(quantizer.Quantize(
              {0.30, 0.0, 0.0}, MissionType::kBall,
              static_cast<int>(BallMode::kTiltCameraDownAndApproach)) ==

@@ -50,7 +50,11 @@ public:
                          const GoalResult &goal_result,
                          const MotionCommand &line_candidate,
                          const CommandDeliveryFeedback &feedback,
-                         double now_sec);
+                         double now_sec,
+                         bool allow_new_line_locomotion_action = true);
+  // 진행 중 action이 없는 안전한 경계에서 호출자가 Normal/LINE P2P 기준만
+  // 교체할 때 사용한다. ACK/READY/DONE 상태는 보존한다.
+  void UpdateNormalP2pConfig(const P2pMotionConfig &config);
   void Reset();
 
 private:

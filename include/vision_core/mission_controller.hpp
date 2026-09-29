@@ -59,6 +59,11 @@ struct MissionFrameInput {
   // command_transport_enabled=false인 기존 직접 호출자를 위한 호환 입력이다.
   ActionExecutionFeedback action_feedback;
   CommandDeliveryFeedback delivery_feedback;
+  // false이면 인식/특징/FSM과 기존 action feedback 처리는 계속하지만 새로운
+  // LINE locomotion action만 시작하지 않는다.
+  bool allow_new_line_locomotion_action{true};
+  // 단발 튜닝처럼 여러 프레임에서 집계한 guide로 이번 LINE 판단만 수행한다.
+  std::optional<LineGuide> line_decision_guide_override;
 };
 
 struct MissionFrameResult {
@@ -101,6 +106,8 @@ struct PerceptionFrameInput {
   bool command_transport_enabled{false};
   ActionExecutionFeedback action_feedback;
   CommandDeliveryFeedback delivery_feedback;
+  bool allow_new_line_locomotion_action{true};
+  std::optional<LineGuide> line_decision_guide_override;
 };
 
 struct PreparedPerceptionFrame {
@@ -135,6 +142,10 @@ public:
       const PerceptionFrameInput &input);
   MissionType ActiveMission() const { return active_mission_; }
   bool HasBall() const { return has_ball_; }
+  // 진행 중 action/짧은 동작 후 관측이 없을 때만 LINE P2P gain과 Normal
+  // 양자화 기준을 상태 손실 없이 교체한다.
+  bool UpdateLineP2pTuning(const LineP2pConfig &line_p2p,
+                           const P2pMotionConfig &normal_p2p);
   void Reset();
 
 private:

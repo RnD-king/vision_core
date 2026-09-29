@@ -104,6 +104,7 @@ int main() {
   assert(command.action_execution_kind == ActionExecutionKind::kDiscrete);
   assert(command.pre_p2p_motion.vx == 0.0);
   assert(command.action_yaw_rad == -0.35);
+
   const auto shoot_id = command.action_id;
   goal.shoot_yaw_rad = 0.20;
   command = coordinator.Compute({}, {}, goal, {});
@@ -273,34 +274,80 @@ int main() {
                                       {ready_current_id, true, false, false});
   assert(command.command_type == CommandType::kHold);
   command = ready_coordinator.Compute({}, {}, {},
-                                      MotionCommand{0.30, 0.0, -0.20},
+                                      MotionCommand{0.30, 0.0, -0.35},
                                       {ready_current_id, true, false, true});
   assert(command.command_type == CommandType::kAction);
   assert(command.action == MissionAction::kWalkForwardRightSix);
   assert(command.action_id != ready_current_id);
-  assert(command.action_yaw_rad == -0.20);
+  assert(command.action_yaw_rad == -0.35);
   const auto queued_id = command.action_id;
 
   command = ready_coordinator.Compute({}, {}, {},
-                                      MotionCommand{0.30, 0.0, -0.20},
+                                      MotionCommand{0.30, 0.0, -0.35},
                                       {queued_id, true, false, false});
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == queued_id);
-  assert(command.action_yaw_rad == -0.20);
+  assert(command.action_yaw_rad == -0.35);
 
   command = ready_coordinator.Compute({}, {}, {},
-                                      MotionCommand{0.30, 0.0, -0.20},
+                                      MotionCommand{0.30, 0.0, -0.35},
                                       {ready_current_id, true, true, false});
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == queued_id);
-  assert(command.action_yaw_rad == -0.20);
+  assert(command.action_yaw_rad == -0.35);
+
+  // 단발 시험 게이트가 닫혀 있으면 READY를 받아도 다음 action을 예약하지
+  // 않고 현재 action의 DONE만 기다린다.
+  ControlCommandCoordinator gated_ready_coordinator(p2p_config);
+  command = gated_ready_coordinator.Compute(
+      {}, {}, {}, MotionCommand{0.30, 0.0, 0.0}, {}, 0.0, false);
+  const auto gated_id = command.action_id;
+  command = gated_ready_coordinator.Compute(
+      {}, {}, {}, MotionCommand{0.30, 0.0, -0.35},
+      {gated_id, true, false, true}, 1.0, false);
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action_id == gated_id);
+  assert(command.control_phase == ControlPhase::kWaitingActionDone);
 
   // 영상 왼쪽으로 향해야 하는 조향 의도는 로봇 yaw 좌회전(+)으로 전달한다.
   ControlCommandCoordinator left_yaw_coordinator(p2p_config);
   command = left_yaw_coordinator.Compute({}, {}, {},
-                                         MotionCommand{0.30, 0.0, 0.20});
+                                         MotionCommand{0.30, 0.0, 0.35});
   assert(command.action == MissionAction::kWalkForwardLeftSix);
+  assert(command.action_yaw_rad == 0.35);
+
+  // 중간 조향은 고정 4걸음 곡선 모션이며 별도 목표 yaw를 전달하지 않는다.
+  ControlCommandCoordinator curve_four_coordinator(p2p_config);
+  command = curve_four_coordinator.Compute({}, {}, {},
+                                           MotionCommand{0.30, 0.0, -0.20});
+  assert(command.action == MissionAction::kWalkForwardRightFour);
+  assert(command.action_yaw_rad == 0.0);
+
+  // 저속에서 큰 조향은 제자리회전이며 반복 횟수 결정을 위한 yaw를 전달한다.
+  ControlCommandCoordinator in_place_coordinator(p2p_config);
+  command = in_place_coordinator.Compute({}, {}, {},
+                                         MotionCommand{0.10, 0.0, 0.20});
+  assert(command.action == MissionAction::kTurnLeftInPlace);
   assert(command.action_yaw_rad == 0.20);
+
+  // 라인 속도 의도가 모두 deadband 안이면 일반 HOLD가 아니라 실행기가
+  // ACK/DONE을 반환하는 2초 자세 유지 locomotion action을 발행한다.
+  ControlCommandCoordinator hold_pose_coordinator(p2p_config);
+  command = hold_pose_coordinator.Compute({}, {}, {}, MotionCommand{});
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action == MissionAction::kHoldPoseTwo);
+  assert(command.action_category == ActionCategory::kLocomotion);
+  assert(command.action_execution_kind == ActionExecutionKind::kStationary);
+  const auto hold_pose_id = command.action_id;
+  command = hold_pose_coordinator.Compute({}, {}, {}, MotionCommand{},
+                                          {hold_pose_id, true, false});
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action_id == hold_pose_id);
+  command = hold_pose_coordinator.Compute({}, {}, {}, MotionCommand{},
+                                          {hold_pose_id, true, true});
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action == MissionAction::kHoldPoseTwo);
+  assert(command.action_id != hold_pose_id);
 
   // ACK가 설정 시간 안에 오지 않으면 늦은 ACK에 의한 중복 실행을 피하도록
   // 자동 재발행하지 않고 Reset 전까지 timeout HOLD로 잠근다.

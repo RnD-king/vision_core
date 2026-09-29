@@ -227,6 +227,7 @@ vision_algorithm:
       yaw_deadband: 0.05
       long_forward_vx: 0.22
       curve_yaw_threshold: 0.10
+      sharp_turn_yaw_threshold: 0.30
       turn_in_place_vx_max: 0.05
       lateral_dominance_ratio: 1.0
     p2p_fine:
@@ -235,6 +236,7 @@ vision_algorithm:
       yaw_deadband: 0.03
       long_forward_vx: 1.0
       curve_yaw_threshold: 0.05
+      sharp_turn_yaw_threshold: 0.15
       turn_in_place_vx_max: 0.03
       lateral_dominance_ratio: 0.75
     p2p_recovery:
@@ -243,6 +245,7 @@ vision_algorithm:
       yaw_deadband: 0.04
       long_forward_vx: 1.0
       curve_yaw_threshold: 0.08
+      sharp_turn_yaw_threshold: 0.24
       turn_in_place_vx_max: 0.08
       lateral_dominance_ratio: 1.0
 
