@@ -186,40 +186,26 @@ enum class MissionType {
 
 enum class MissionAction {
   kNone = 0,
-  kStepForwardHalf = 1,
-  kStepForward = 2,
-  kStepBackward = 3,
-  kStepLeft = 4,
-  kStepRight = 5,
-  kTurnLeft = 6,
-  kTurnRight = 7,
-  kPickupBall = 8,
-  kStandUp = 9,
-  kHurdleContactWalk = 10,
-  kCrossHurdle = 11,
-  kShoot = 12,
-  kVerifyPickup = 13,
-  kFineAdjustHold = 14,
-  // P2P locomotion backend가 사용하는 고정 보행 코드. 기존 1~14의 값과
-  // 의미는 ROS/C API 호환을 위해 그대로 유지한다.
-  kWalkForwardTwo = 15,
-  kWalkForwardLeftTwo = 16,
-  kWalkForwardRightTwo = 17,
-  kWalkForwardSix = 18,
-  kWalkForwardLeftSix = 19,
-  kWalkForwardRightSix = 20,
-  kWalkBackwardTwo = 21,
-  kWalkLeftTwo = 22,
-  kWalkRightTwo = 23,
-  kTurnLeftInPlace = 24,
-  kTurnRightInPlace = 25,
-  // 중간 크기 조향에서 사용하는 4걸음 곡선 보행이다. 기존 action 번호를
-  // 바꾸지 않기 위해 새 코드로 추가한다.
-  kWalkForwardLeftFour = 26,
-  kWalkForwardRightFour = 27,
-  // 라인 명령이 deadband 안에 들어왔을 때 자세를 유지하며 다음 관측을
-  // 기다리는 2초 정지 primitive다.
-  kHoldPoseTwo = 28,
+  // ROS ActionCommand.msg와 C API가 공유하는 단일 action 번호 규약.
+  kDefaultPosition = 1,
+  kDefaultPoseMode = 2,
+  kStepForwardHalf = 3,
+  kStepBack = 4,
+  kLeftSideStep = 5,
+  kRightSideStep = 6,
+  kTurnLeft = 7,
+  kTurnRight = 8,
+  kWalkMode = 9,
+  kStepForwardOne = 10,
+  kStepForwardLeft = 11,
+  kStepForwardRight = 12,
+  kStepForwardFive = 13,
+  kPickBall = 14,
+  kRecatch = 15,
+  kHurdle = 16,
+  kShoot = 17,
+  kTurnLeftAndStep = 18,
+  kTurnRightAndStep = 19,
 };
 
 // action 숫자는 하나의 ROS 토픽으로 전달하지만, 생성 원인과 DONE 처리 규칙은
@@ -295,8 +281,9 @@ struct ControlCommand {
   ActionCategory action_category{ActionCategory::kNone};
   ActionExecutionKind action_execution_kind{ActionExecutionKind::kNone};
   std::uint64_t action_id{0};
-  // SHOOT의 몸통 목표각 또는 제자리회전/좌·우 6걸음 복합 보행에 적용할
-  // 목표각이다. 로봇 yaw 기준 좌회전(+), 우회전(-)이며 그 외에는 0이다.
+  // SHOOT은 로봇 yaw 기준 signed 목표각을 사용한다. 라인의
+  // TURN_LEFT/RIGHT(±_AND_STEP 포함)는 action이 방향을 구분하므로
+  // 양수 회전량만 사용하며, 그 외 action은 0이다.
   double action_yaw_rad{0.0};
   CameraRequest camera_request{CameraRequest::kNone};
 };

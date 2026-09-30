@@ -10,11 +10,21 @@
 namespace vision_core {
 namespace {
 bool IsLongLineLocomotionAction(MissionAction action) {
-  return action == MissionAction::kWalkForwardSix ||
-         action == MissionAction::kWalkForwardLeftSix ||
-         action == MissionAction::kWalkForwardRightSix ||
-         action == MissionAction::kWalkForwardLeftFour ||
-         action == MissionAction::kWalkForwardRightFour;
+  return action == MissionAction::kStepForwardFive ||
+         action == MissionAction::kStepForwardLeft ||
+         action == MissionAction::kStepForwardRight ||
+         action == MissionAction::kTurnLeftAndStep ||
+         action == MissionAction::kTurnRightAndStep;
+}
+
+bool IsInsideP2pDeadband(const MotionCommand &command,
+                         const P2pMotionConfig &config) {
+  const auto inside = [](double value, double deadband) {
+    return value == 0.0 || std::abs(value) < std::max(0.0, deadband);
+  };
+  return inside(command.vx, config.forward_deadband) &&
+         inside(command.vy, config.lateral_deadband) &&
+         inside(command.wz, config.yaw_deadband);
 }
 } // namespace
 
@@ -57,6 +67,8 @@ void MissionController::BeginLineReacquisition() {
 
 void MissionController::EnterMission(MissionType mission) {
   active_mission_ = mission;
+  line_no_action_hold_active_ = false;
+  line_no_action_hold_end_sec_ = 0.0;
   if (mission == MissionType::kBall) {
     hurdle_controller_.Reset();
     goal_controller_.Reset();
@@ -75,6 +87,8 @@ void MissionController::EnterMission(MissionType mission) {
 
 void MissionController::FinishMission() {
   active_mission_ = MissionType::kLine;
+  line_no_action_hold_active_ = false;
+  line_no_action_hold_end_sec_ = 0.0;
   ball_result_ = {};
   hurdle_result_ = {};
   goal_result_ = {};
@@ -188,7 +202,7 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
       } else if (input.allow_new_line_locomotion_action &&
                  pending_line_locomotion && matching_feedback &&
                  input.delivery_feedback.done) {
-        // 짧은 2걸음/제자리회전은 흔들림이 멎은 뒤의 관측으로 다음 동작을
+        // 짧은 1걸음/제자리회전은 흔들림이 멎은 뒤의 관측으로 다음 동작을
         // 정한다. DONE 프레임부터 고정 시간 동안 정지하며 전체 표본을 모은다.
         line_guide_accumulator_.Reset();
         short_line_collection_action_id_ = last_command_.action_id;
@@ -217,12 +231,36 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
 
       const MotionCommand p2p_command =
           line_p2p_controller_.Compute(decision_guide);
-      // 점이 부족해 compact guide를 만들 수 없는 recovery 구간은 기존의
-      // 검증된 line recovery 명령을 그대로 P2P quantizer에 전달한다.
-      output.line_command = force_line_hold
-                                ? MotionCommand{}
-                                : (decision_guide.valid ? p2p_command
-                                                        : velocity_command);
+      const bool no_action_candidate =
+          !decision_guide.valid ||
+          IsInsideP2pDeadband(p2p_command, config_.command.p2p);
+
+      // 라인을 잃었거나 판단값이 모두 deadband 안이면 실행기가 ACK/DONE을
+      // 반환해야 하는 가짜 정지 action을 만들지 않는다. 정해진 시간 동안
+      // 현재 자세를 유지한 뒤 새 관측으로 다시 판단한다.
+      if (line_no_action_hold_active_) {
+        if (input.now_sec + 1e-9 < line_no_action_hold_end_sec_) {
+          force_line_hold = true;
+        } else {
+          line_no_action_hold_active_ = false;
+          line_no_action_hold_end_sec_ = 0.0;
+        }
+      }
+      if (!force_line_hold && !line_no_action_hold_active_ &&
+          allow_new_line_locomotion_action && !pending_line_locomotion &&
+          !short_line_collection_active_ && no_action_candidate) {
+        force_line_hold = true;
+        const double hold_sec =
+            std::max(0.0, config_.line_p2p.no_action_hold_sec);
+        if (hold_sec > 0.0) {
+          line_no_action_hold_active_ = true;
+          line_no_action_hold_end_sec_ = input.now_sec + hold_sec;
+        }
+      }
+
+      output.line_command =
+          force_line_hold || no_action_candidate ? MotionCommand{}
+                                                  : p2p_command;
       if (force_line_hold) allow_new_line_locomotion_action = false;
     }
     output.line_computed = true;
@@ -349,6 +387,8 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
     short_line_collection_action_id_ = 0;
     short_line_collection_end_sec_ = 0.0;
     ready_line_action_id_ = 0;
+    line_no_action_hold_active_ = false;
+    line_no_action_hold_end_sec_ = 0.0;
   }
   last_command_ = output.command;
   output.active_mission = output.command.mission;
@@ -521,7 +561,8 @@ MissionController::StepPerception(const PerceptionFrameInput &input) {
 bool MissionController::UpdateLineP2pTuning(
     const LineP2pConfig &line_p2p,
     const P2pMotionConfig &normal_p2p) {
-  if (last_command_.action_id != 0 || short_line_collection_active_) {
+  if (last_command_.action_id != 0 || short_line_collection_active_ ||
+      line_no_action_hold_active_) {
     return false;
   }
   config_.line_p2p = line_p2p;
@@ -548,6 +589,8 @@ void MissionController::Reset() {
   short_line_collection_action_id_ = 0;
   short_line_collection_end_sec_ = 0.0;
   ready_line_action_id_ = 0;
+  line_no_action_hold_active_ = false;
+  line_no_action_hold_end_sec_ = 0.0;
   ball_result_ = {};
   hurdle_result_ = {};
   goal_result_ = {};

@@ -62,6 +62,7 @@ vision_algorithm:
     heading_gain: 1.0
     curvature_gain: 1.0
     short_post_collect_sec: 1.0
+    no_action_hold_sec: 2.0
 
   ball:
     stable_window: 10

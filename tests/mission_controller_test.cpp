@@ -165,7 +165,7 @@ void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
   assert(result.command.action_id == 501);
-  assert(result.command.action == MissionAction::kWalkForwardRightFour);
+  assert(result.command.action == MissionAction::kStepForwardRight);
 
   // 현재 action의 실제 DONE 뒤에는 예약 action이 실행 중 action으로 승격된다.
   input = Frame(0.5);
@@ -183,7 +183,7 @@ void TestShortLineActionCollectsForOneSecondAfterDone() {
   config.line.line_stable_window = 1;
   config.line.line_stable_min_hits = 1;
   config.command.locomotion_backend = LocomotionBackend::kP2pAction;
-  // 첫 직진을 2걸음 action으로 만들고 DONE 뒤 1초 관측을 검증한다.
+  // 첫 직진을 1걸음 action으로 만들고 DONE 뒤 1초 관측을 검증한다.
   config.command.p2p.long_forward_vx = 1.0;
   config.line_p2p.short_post_collect_sec = 1.0;
   config.command.first_action_id = 600;
@@ -192,7 +192,7 @@ void TestShortLineActionCollectsForOneSecondAfterDone() {
   auto input = Frame(0.0);
   auto result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kWalkForwardTwo);
+  assert(result.command.action == MissionAction::kStepForwardOne);
   assert(result.command.action_id == 600);
 
   input = Frame(0.1);
@@ -216,13 +216,13 @@ void TestShortLineActionCollectsForOneSecondAfterDone() {
   assert(result.command.action_id == 0);
 
   // DONE+1초에 수집한 오른쪽 치우침이 다음 PRE-P2P 조향 의도에 반영된다.
-  // 저속에서 조향 임계값을 넘으면 2걸음 직진 대신 제자리회전을 선택한다.
+  // 저속에서 조향 임계값을 넘으면 1걸음 직진 대신 제자리회전을 선택한다.
   input = Frame(3.0);
   for (auto &point : input.line_centers) point.u = 60.0;
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
   assert(result.command.action_id == 601);
-  assert(result.command.action == MissionAction::kTurnRightInPlace);
+  assert(result.command.action == MissionAction::kTurnRight);
   assert(result.command.pre_p2p_motion.wz < -0.10);
 }
 
@@ -252,11 +252,44 @@ void TestOneShotLineDecisionGateAndSafeTuningUpdate() {
   input.line_decision_guide_override = LineGuide{0.20, 0.0, 0.0, 1.0, true};
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kWalkForwardRightSix);
+  assert(result.command.action == MissionAction::kTurnRightAndStep);
   assert(result.command.action_id == 700);
   // 실행 중인 action이 있으면 gain/기준 교체를 거절한다.
   assert(!controller.UpdateLineP2pTuning(config.line_p2p,
                                          config.command.p2p));
+}
+
+void TestMissingLineHoldsWithoutPublishingActionForTwoSeconds() {
+  auto config = FastConfig();
+  config.enable_ball = false;
+  config.enable_hurdle = false;
+  config.enable_goal = false;
+  config.line.line_stable_window = 1;
+  config.line.line_stable_min_hits = 1;
+  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
+  config.command.first_action_id = 800;
+  config.line_p2p.no_action_hold_sec = 2.0;
+  MissionController controller(config);
+
+  auto input = Frame(0.0);
+  input.line_centers.clear();
+  auto result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kHold);
+  assert(result.command.action == MissionAction::kNone);
+  assert(result.command.action_id == 0);
+
+  // 유지 시간 중 라인이 다시 보여도 중간에 새 action을 발행하지 않는다.
+  input = Frame(1.0);
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kHold);
+  assert(result.command.action_id == 0);
+
+  // 정확히 2초가 지나면 최신 유효 관측으로 정상 locomotion을 재개한다.
+  input = Frame(2.0);
+  result = controller.Step(input);
+  assert(result.command.command_type == CommandType::kAction);
+  assert(result.command.action == MissionAction::kStepForwardFive);
+  assert(result.command.action_id == 800);
 }
 
 } // namespace
@@ -268,6 +301,7 @@ int main() {
   TestMissionControllerReturnsActionAndPreP2pMotionTogether();
   TestShortLineActionCollectsForOneSecondAfterDone();
   TestOneShotLineDecisionGateAndSafeTuningUpdate();
+  TestMissingLineHoldsWithoutPublishingActionForTwoSeconds();
   std::cout << "mission controller tests passed\n";
   return 0;
 }

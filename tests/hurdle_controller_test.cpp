@@ -134,6 +134,8 @@ void TestHurdleFeedbackSequenceStopsRlAndWaitsForDone() {
                               waiting);
   assert(result.mode == HurdleMode::kContactWalk);
   assert(result.action_request == HurdleActionRequest::kContactWalk);
+  assert(std::abs(result.command.vx - cfg.contact_walk_placeholder_vx) <
+         1e-9);
 
   result = controller.Compute(hurdle, 100, 100, 0.70, 0.8, true, Down(),
                               done);

@@ -144,6 +144,8 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(line_p2p, "curvature_gain", config.line_p2p.curvature_gain);
   Assign(line_p2p, "short_post_collect_sec",
          config.line_p2p.short_post_collect_sec);
+  Assign(line_p2p, "no_action_hold_sec",
+         config.line_p2p.no_action_hold_sec);
 
   const YAML::Node ball = algorithm["ball"];
   Assign(ball, "stable_window", config.ball.stable_window);

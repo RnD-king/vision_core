@@ -6,36 +6,29 @@
 
 namespace vision_core {
 
-// P2P 실행기가 제공할 고정 보행 primitive다. 숫자는 외부 ActionCommand의
-// action 코드와 일치하며 기존 미션 액션(1~14)과 겹치지 않는다.
+// P2P 실행기가 제공하는 고정 보행 primitive다. 숫자는 외부
+// ActionCommand의 단일 action 규약과 일치한다.
 enum class LocomotionAction : std::uint16_t {
   kNone = 0,
-  kWalkForwardTwo =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardTwo),
-  kWalkForwardLeftTwo =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardLeftTwo),
-  kWalkForwardRightTwo =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardRightTwo),
-  kWalkForwardSix =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardSix),
-  kWalkForwardLeftSix =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardLeftSix),
-  kWalkForwardRightSix =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardRightSix),
-  kWalkBackwardTwo =
-      static_cast<std::uint16_t>(MissionAction::kWalkBackwardTwo),
-  kWalkLeftTwo = static_cast<std::uint16_t>(MissionAction::kWalkLeftTwo),
-  kWalkRightTwo = static_cast<std::uint16_t>(MissionAction::kWalkRightTwo),
-  kTurnLeftInPlace =
-      static_cast<std::uint16_t>(MissionAction::kTurnLeftInPlace),
-  kTurnRightInPlace =
-      static_cast<std::uint16_t>(MissionAction::kTurnRightInPlace),
-  kWalkForwardLeftFour =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardLeftFour),
-  kWalkForwardRightFour =
-      static_cast<std::uint16_t>(MissionAction::kWalkForwardRightFour),
-  kHoldPoseTwo =
-      static_cast<std::uint16_t>(MissionAction::kHoldPoseTwo),
+  kStepBack = static_cast<std::uint16_t>(MissionAction::kStepBack),
+  kLeftSideStep =
+      static_cast<std::uint16_t>(MissionAction::kLeftSideStep),
+  kRightSideStep =
+      static_cast<std::uint16_t>(MissionAction::kRightSideStep),
+  kTurnLeft = static_cast<std::uint16_t>(MissionAction::kTurnLeft),
+  kTurnRight = static_cast<std::uint16_t>(MissionAction::kTurnRight),
+  kStepForwardOne =
+      static_cast<std::uint16_t>(MissionAction::kStepForwardOne),
+  kStepForwardLeft =
+      static_cast<std::uint16_t>(MissionAction::kStepForwardLeft),
+  kStepForwardRight =
+      static_cast<std::uint16_t>(MissionAction::kStepForwardRight),
+  kStepForwardFive =
+      static_cast<std::uint16_t>(MissionAction::kStepForwardFive),
+  kTurnLeftAndStep =
+      static_cast<std::uint16_t>(MissionAction::kTurnLeftAndStep),
+  kTurnRightAndStep =
+      static_cast<std::uint16_t>(MissionAction::kTurnRightAndStep),
 };
 
 struct P2pMotionConfig {
@@ -44,13 +37,13 @@ struct P2pMotionConfig {
   double lateral_deadband{};
   double yaw_deadband{};
 
-  // 전진속도가 이 값 이상이면 2걸음 대신 6걸음 primitive를 선택한다.
+  // 전진속도가 이 값 이상이면 1걸음 대신 5걸음 primitive를 선택한다.
   double long_forward_vx{};
-  // 라인 고속 전진에서는 yaw가 이 값 이상이면 4걸음 곡선 보행을,
+  // 라인 긴 전진에서는 yaw가 이 값 이상이면 곡선 보행을,
   // 저속 전진에서는 제자리회전을 선택한다.
   double curve_yaw_threshold{};
-  // 라인 고속 전진에서 yaw가 이 값 이상이면 4걸음 곡선 대신
-  // 제자리회전 반복 + 직진 6걸음 복합 primitive를 선택한다.
+  // 라인 긴 전진에서 yaw가 이 값 이상이면 곡선 보행 대신
+  // 제자리회전 반복 + 직진 복합 primitive를 선택한다.
   double sharp_turn_yaw_threshold{};
   // 전후진이 이 값 이하인 회전 명령은 제자리 회전으로 취급한다.
   double turn_in_place_vx_max{};

@@ -229,12 +229,17 @@ HurdleResult HurdleController::Compute(
       state_enter_sec_ = now_sec;
       result.mode = mode_;
       result.action_request = HurdleActionRequest::kContactWalk;
+      result.command = {std::max(0.0, config_.contact_walk_placeholder_vx),
+                        0.0, 0.0};
     }
     return result;
   case HurdleMode::kContactWalk:
     result.active = true;
     result.action_request = HurdleActionRequest::kContactWalk;
-    result.command = {};
+    // 실제 로봇은 STEP_FORWARD_ONE action을 실행한다. 같은 action을
+    // velocity-compatible하게 모사하는 MuJoCo에는 이 PRE-P2P 속도를 준다.
+    result.command = {std::max(0.0, config_.contact_walk_placeholder_vx),
+                      0.0, 0.0};
     if ((action_feedback.enabled && action_feedback.action_done) ||
         (!action_feedback.enabled &&
          now_sec - state_enter_sec_ + kTimeEpsilon >=
@@ -410,9 +415,9 @@ HURDLE_CAMERA_TILT_DOWN_AND_SLOW(2)
 HURDLE_RL_STOPPING(6)
   -> VELOCITY, HURDLE(4), 6, 0/0/0, NONE, NONE
 HURDLE_CONTACT_WALK(3)
-  -> ACTION, HURDLE(4), 3, 0/0/0, HURDLE_CONTACT_WALK(10), NONE
+  -> ACTION, HURDLE(4), 3, 0/0/0, STEP_FORWARD_ONE(10), NONE
 HURDLE_CROSS(4)
-  -> ACTION, HURDLE(4), 4, 0/0/0, CROSS_HURDLE(11), NONE
+  -> ACTION, HURDLE(4), 4, 0/0/0, HUDDLE(16), NONE
 HURDLE_CAMERA_RETURN_TO_LINE(5)
   -> VELOCITY, HURDLE(4), 5, 0/0/0, NONE, FORWARD(2)
 ACTION은 ControlCommandCoordinator가 action_id를 발급한다. ACK 전에는 ACTION을

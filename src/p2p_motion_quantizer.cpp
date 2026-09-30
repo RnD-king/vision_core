@@ -122,35 +122,35 @@ LocomotionAction P2pMotionQuantizer::QuantizeLineWithConfig(
   const double wz = std::abs(command.wz) >= yaw_deadband ? command.wz : 0.0;
 
   if (vx == 0.0 && vy == 0.0 && wz == 0.0) {
-    return LocomotionAction::kHoldPoseTwo;
+    return LocomotionAction::kNone;
   }
-  if (vx < 0.0) return LocomotionAction::kWalkBackwardTwo;
+  if (vx < 0.0) return LocomotionAction::kStepBack;
   if (vx > 0.0) {
     const bool long_walk = vx >= long_forward_vx;
     const double abs_wz = std::abs(wz);
     if (!long_walk) {
       if (abs_wz >= curve_yaw_threshold) {
-        return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
-                        : LocomotionAction::kTurnRightInPlace;
+        return wz > 0.0 ? LocomotionAction::kTurnLeft
+                        : LocomotionAction::kTurnRight;
       }
-      return LocomotionAction::kWalkForwardTwo;
+      return LocomotionAction::kStepForwardOne;
     }
     if (abs_wz >= sharp_turn_yaw_threshold) {
-      return wz > 0.0 ? LocomotionAction::kWalkForwardLeftSix
-                      : LocomotionAction::kWalkForwardRightSix;
+      return wz > 0.0 ? LocomotionAction::kTurnLeftAndStep
+                      : LocomotionAction::kTurnRightAndStep;
     }
     if (abs_wz >= curve_yaw_threshold) {
-      return wz > 0.0 ? LocomotionAction::kWalkForwardLeftFour
-                      : LocomotionAction::kWalkForwardRightFour;
+      return wz > 0.0 ? LocomotionAction::kStepForwardLeft
+                      : LocomotionAction::kStepForwardRight;
     }
-    return LocomotionAction::kWalkForwardSix;
+    return LocomotionAction::kStepForwardFive;
   }
   if (vy != 0.0) {
-    return vy > 0.0 ? LocomotionAction::kWalkLeftTwo
-                    : LocomotionAction::kWalkRightTwo;
+    return vy > 0.0 ? LocomotionAction::kLeftSideStep
+                    : LocomotionAction::kRightSideStep;
   }
-  return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
-                  : LocomotionAction::kTurnRightInPlace;
+  return wz > 0.0 ? LocomotionAction::kTurnLeft
+                  : LocomotionAction::kTurnRight;
 }
 
 LocomotionAction
@@ -174,18 +174,18 @@ P2pMotionQuantizer::QuantizeWithConfig(const MotionCommand &command,
 
   const double turn_vx_max = std::max(0.0, config.turn_in_place_vx_max);
   if (wz != 0.0 && std::abs(vx) <= turn_vx_max && vy == 0.0) {
-    return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
-                    : LocomotionAction::kTurnRightInPlace;
+    return wz > 0.0 ? LocomotionAction::kTurnLeft
+                    : LocomotionAction::kTurnRight;
   }
 
   const double lateral_ratio = std::max(0.0, config.lateral_dominance_ratio);
   if (vy != 0.0 && std::abs(vy) > std::abs(vx) * lateral_ratio) {
-    return vy > 0.0 ? LocomotionAction::kWalkLeftTwo
-                    : LocomotionAction::kWalkRightTwo;
+    return vy > 0.0 ? LocomotionAction::kLeftSideStep
+                    : LocomotionAction::kRightSideStep;
   }
 
   if (vx < 0.0)
-    return LocomotionAction::kWalkBackwardTwo;
+    return LocomotionAction::kStepBack;
 
   if (vx > 0.0) {
     const bool long_walk =
@@ -194,22 +194,22 @@ P2pMotionQuantizer::QuantizeWithConfig(const MotionCommand &command,
         std::abs(wz) >= std::max(yaw_deadband, config.curve_yaw_threshold);
     if (curved) {
       if (wz > 0.0) {
-        return long_walk ? LocomotionAction::kWalkForwardLeftSix
-                         : LocomotionAction::kWalkForwardLeftTwo;
+        return long_walk ? LocomotionAction::kTurnLeftAndStep
+                         : LocomotionAction::kStepForwardLeft;
       }
-      return long_walk ? LocomotionAction::kWalkForwardRightSix
-                       : LocomotionAction::kWalkForwardRightTwo;
+      return long_walk ? LocomotionAction::kTurnRightAndStep
+                       : LocomotionAction::kStepForwardRight;
     }
-    return long_walk ? LocomotionAction::kWalkForwardSix
-                     : LocomotionAction::kWalkForwardTwo;
+    return long_walk ? LocomotionAction::kStepForwardFive
+                     : LocomotionAction::kStepForwardOne;
   }
 
   if (vy != 0.0) {
-    return vy > 0.0 ? LocomotionAction::kWalkLeftTwo
-                    : LocomotionAction::kWalkRightTwo;
+    return vy > 0.0 ? LocomotionAction::kLeftSideStep
+                    : LocomotionAction::kRightSideStep;
   }
-  return wz > 0.0 ? LocomotionAction::kTurnLeftInPlace
-                  : LocomotionAction::kTurnRightInPlace;
+  return wz > 0.0 ? LocomotionAction::kTurnLeft
+                  : LocomotionAction::kTurnRight;
 }
 
 MissionAction ToActionCode(LocomotionAction action) {

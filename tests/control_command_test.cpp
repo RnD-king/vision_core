@@ -33,9 +33,9 @@ int main() {
   hurdle.action_request = HurdleActionRequest::kContactWalk;
   command = coordinator.Compute(ball, hurdle, goal, line);
   assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kHurdleContactWalk);
-  assert(command.action_execution_kind == ActionExecutionKind::kDiscrete);
-  assert(command.pre_p2p_motion.vx == 0.0);
+  assert(command.action == MissionAction::kStepForwardOne);
+  assert(command.action_execution_kind ==
+         ActionExecutionKind::kVelocityCompatible);
   const auto first_id = command.action_id;
   assert(first_id != 0);
 
@@ -50,6 +50,21 @@ int main() {
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == 0);
 
+  // 접촉 전진 DONE 직후 Cross 단계는 다른 action 코드이므로 억제되지 않고
+  // 실제 허들 넘기 동작(16)을 새 ID로 발행한다.
+  hurdle.mode = HurdleMode::kCross;
+  hurdle.action_request = HurdleActionRequest::kCross;
+  command = coordinator.Compute(ball, hurdle, goal, line);
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action == MissionAction::kHurdle);
+  assert(command.action_execution_kind == ActionExecutionKind::kDiscrete);
+  const auto cross_id = command.action_id;
+  assert(cross_id != first_id);
+  command = coordinator.Compute(ball, hurdle, goal, line,
+                                {cross_id, true, true});
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action_id == 0);
+
   hurdle.action_request = HurdleActionRequest::kNone;
   hurdle.active = false;
   hurdle.mode = HurdleMode::kLineFollow;
@@ -59,6 +74,7 @@ int main() {
   hurdle.active = true;
   hurdle.mode = HurdleMode::kContactWalk;
   hurdle.action_request = HurdleActionRequest::kContactWalk;
+  hurdle.command = {0.10, 0.0, 0.0};
   command = coordinator.Compute(ball, hurdle, goal, line);
   assert(command.command_type == CommandType::kAction);
   assert(command.action_id != first_id);
@@ -75,6 +91,7 @@ int main() {
   assert(command.action == MissionAction::kStepForwardHalf);
   assert(command.action_execution_kind ==
          ActionExecutionKind::kVelocityCompatible);
+  assert(command.pre_p2p_motion.vx == 0.10);
   assert(command.action_yaw_rad == 0.0);
   assert(command.pre_p2p_motion.vx == 0.15);
 
@@ -87,7 +104,7 @@ int main() {
   assert(command.command_type == CommandType::kAction);
   assert(command.mission == MissionType::kBall);
   assert(command.mission_phase == static_cast<int>(BallMode::kVerifyPickup));
-  assert(command.action == MissionAction::kVerifyPickup);
+  assert(command.action == MissionAction::kRecatch);
   assert(command.velocity.vx == 0.0);
   assert(command.pre_p2p_motion.vx == 0.0);
   assert(command.action_execution_kind == ActionExecutionKind::kDiscrete);
@@ -119,7 +136,7 @@ int main() {
   command = coordinator.Compute(ball, hurdle, goal, line);
   assert(command.command_type == CommandType::kAction);
   assert(command.mission == MissionType::kGoal);
-  assert(command.action == MissionAction::kFineAdjustHold);
+  assert(command.action == MissionAction::kDefaultPoseMode);
   assert(command.velocity.vx == 0.0);
   assert(command.pre_p2p_motion.vx == 0.0);
   assert(command.action_execution_kind == ActionExecutionKind::kStationary);
@@ -130,7 +147,7 @@ int main() {
   command = coordinator.Compute(ball, hurdle, goal, line,
                                 {first_hold_id, true, true});
   assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kFineAdjustHold);
+  assert(command.action == MissionAction::kDefaultPoseMode);
   assert(command.action_id != first_hold_id);
 
   coordinator.Reset();
@@ -158,7 +175,7 @@ int main() {
   hurdle.action_request = HurdleActionRequest::kContactWalk;
   command = coordinator.Compute(ball, hurdle, goal, line);
   assert(command.mission == MissionType::kHurdle);
-  assert(command.action == MissionAction::kHurdleContactWalk);
+  assert(command.action == MissionAction::kStepForwardOne);
 
   // Ball이 먼저 선택되면 Goal/Hurdle이 중간에 활성화돼도 Ball의 명시적인
   // LINE_FOLLOW 이탈 전에는 최종 미션을 바꾸지 않는다.
@@ -209,7 +226,7 @@ int main() {
   ball.action_request = BallActionRequest::kStandUp;
   command = coordinator.Compute(ball, hurdle, goal, line);
   assert(command.mission == MissionType::kBall);
-  assert(command.action == MissionAction::kStandUp);
+  assert(command.action == MissionAction::kDefaultPosition);
 
   // P2P backend는 기존 controller의 연속속도를 보행 ACTION으로 바꾸고,
   // 동일 primitive도 DONE 뒤 새 ID로 다시 실행할 수 있다.
@@ -225,7 +242,7 @@ int main() {
                                     MotionCommand{0.30, 0.0, 0.0});
   assert(command.command_type == CommandType::kAction);
   assert(command.action_category == ActionCategory::kLocomotion);
-  assert(command.action == MissionAction::kWalkForwardSix);
+  assert(command.action == MissionAction::kStepForwardFive);
   assert(command.action_id == 100);
   assert(command.velocity.vx == 0.0);
   assert(command.pre_p2p_motion.vx == 0.30);
@@ -258,7 +275,7 @@ int main() {
                                     MotionCommand{0.30, 0.0, 0.0},
                                     {100, true, true});
   assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kWalkForwardSix);
+  assert(command.action == MissionAction::kStepForwardFive);
   assert(command.action_category == ActionCategory::kLocomotion);
   assert(command.action_id == 101);
   assert(command.pre_p2p_motion.vx == 0.30);
@@ -277,9 +294,9 @@ int main() {
                                       MotionCommand{0.30, 0.0, -0.35},
                                       {ready_current_id, true, false, true});
   assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kWalkForwardRightSix);
+  assert(command.action == MissionAction::kTurnRightAndStep);
   assert(command.action_id != ready_current_id);
-  assert(command.action_yaw_rad == -0.35);
+  assert(command.action_yaw_rad == 0.35);
   const auto queued_id = command.action_id;
 
   command = ready_coordinator.Compute({}, {}, {},
@@ -287,14 +304,14 @@ int main() {
                                       {queued_id, true, false, false});
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == queued_id);
-  assert(command.action_yaw_rad == -0.35);
+  assert(command.action_yaw_rad == 0.35);
 
   command = ready_coordinator.Compute({}, {}, {},
                                       MotionCommand{0.30, 0.0, -0.35},
                                       {ready_current_id, true, true, false});
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == queued_id);
-  assert(command.action_yaw_rad == -0.35);
+  assert(command.action_yaw_rad == 0.35);
 
   // 단발 시험 게이트가 닫혀 있으면 READY를 받아도 다음 action을 예약하지
   // 않고 현재 action의 DONE만 기다린다.
@@ -313,41 +330,31 @@ int main() {
   ControlCommandCoordinator left_yaw_coordinator(p2p_config);
   command = left_yaw_coordinator.Compute({}, {}, {},
                                          MotionCommand{0.30, 0.0, 0.35});
-  assert(command.action == MissionAction::kWalkForwardLeftSix);
+  assert(command.action == MissionAction::kTurnLeftAndStep);
   assert(command.action_yaw_rad == 0.35);
 
   // 중간 조향은 고정 4걸음 곡선 모션이며 별도 목표 yaw를 전달하지 않는다.
   ControlCommandCoordinator curve_four_coordinator(p2p_config);
   command = curve_four_coordinator.Compute({}, {}, {},
                                            MotionCommand{0.30, 0.0, -0.20});
-  assert(command.action == MissionAction::kWalkForwardRightFour);
+  assert(command.action == MissionAction::kStepForwardRight);
   assert(command.action_yaw_rad == 0.0);
 
   // 저속에서 큰 조향은 제자리회전이며 반복 횟수 결정을 위한 yaw를 전달한다.
   ControlCommandCoordinator in_place_coordinator(p2p_config);
   command = in_place_coordinator.Compute({}, {}, {},
                                          MotionCommand{0.10, 0.0, 0.20});
-  assert(command.action == MissionAction::kTurnLeftInPlace);
+  assert(command.action == MissionAction::kTurnLeft);
   assert(command.action_yaw_rad == 0.20);
 
-  // 라인 속도 의도가 모두 deadband 안이면 일반 HOLD가 아니라 실행기가
-  // ACK/DONE을 반환하는 2초 자세 유지 locomotion action을 발행한다.
+  // 라인 속도 의도가 모두 deadband 안이면 별도 모션을 발행하지
+  // 않고 현재 자세를 유지한다.
   ControlCommandCoordinator hold_pose_coordinator(p2p_config);
   command = hold_pose_coordinator.Compute({}, {}, {}, MotionCommand{});
-  assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kHoldPoseTwo);
-  assert(command.action_category == ActionCategory::kLocomotion);
-  assert(command.action_execution_kind == ActionExecutionKind::kStationary);
-  const auto hold_pose_id = command.action_id;
-  command = hold_pose_coordinator.Compute({}, {}, {}, MotionCommand{},
-                                          {hold_pose_id, true, false});
   assert(command.command_type == CommandType::kHold);
-  assert(command.action_id == hold_pose_id);
-  command = hold_pose_coordinator.Compute({}, {}, {}, MotionCommand{},
-                                          {hold_pose_id, true, true});
-  assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kHoldPoseTwo);
-  assert(command.action_id != hold_pose_id);
+  assert(command.action == MissionAction::kNone);
+  assert(command.action_id == 0);
+  assert(command.action_category == ActionCategory::kNone);
 
   // ACK가 설정 시간 안에 오지 않으면 늦은 ACK에 의한 중복 실행을 피하도록
   // 자동 재발행하지 않고 Reset 전까지 timeout HOLD로 잠근다.
@@ -394,7 +401,7 @@ int main() {
                                     {101, true, true});
   assert(command.command_type == CommandType::kAction);
   assert(command.action_category == ActionCategory::kMission);
-  assert(command.action == MissionAction::kPickupBall);
+  assert(command.action == MissionAction::kPickBall);
   const auto pickup_id = command.action_id;
   assert(pickup_id == 102);
   assert(command.action_execution_kind == ActionExecutionKind::kDiscrete);
@@ -415,8 +422,8 @@ int main() {
   command = p2p_coordinator.Compute(ball, hurdle, goal, {});
   assert(command.command_type == CommandType::kAction);
   assert(command.action_category == ActionCategory::kLocomotion);
-  assert(command.action == MissionAction::kWalkForwardRightSix);
-  assert(command.action_yaw_rad == -0.20);
+  assert(command.action == MissionAction::kTurnRightAndStep);
+  assert(command.action_yaw_rad == 0.20);
 
   // P2P의 영속 정지는 /cmd_vel 대신 새 액션을 만들지 않는 HOLD다.
   ControlCommandCoordinator p2p_idle(p2p_config);
@@ -437,7 +444,7 @@ int main() {
   assert(command.mission == MissionType::kBall);
   assert(command.mission_phase ==
          static_cast<int>(BallMode::kTiltCameraDownAndApproach));
-  assert(command.action == MissionAction::kWalkForwardTwo);
+  assert(command.action == MissionAction::kStepForwardOne);
 
   // Goal 미세보행은 Mission action이지만 실행기 관점에서는 PRE-P2P
   // velocity로 대체할 수 있고, ACK/DONE은 같은 action_id로 유지된다.
@@ -450,7 +457,7 @@ int main() {
   command = fine_coordinator.Compute({}, {}, goal, {});
   assert(command.command_type == CommandType::kAction);
   assert(command.action_category == ActionCategory::kMission);
-  assert(command.action == MissionAction::kStepLeft);
+  assert(command.action == MissionAction::kLeftSideStep);
   assert(command.action_execution_kind ==
          ActionExecutionKind::kVelocityCompatible);
   assert(command.pre_p2p_motion.vy == 0.12);

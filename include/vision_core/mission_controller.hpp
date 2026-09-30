@@ -166,6 +166,8 @@ private:
   std::uint64_t short_line_collection_action_id_{0};
   double short_line_collection_end_sec_{0.0};
   std::uint64_t ready_line_action_id_{0};
+  bool line_no_action_hold_active_{false};
+  double line_no_action_hold_end_sec_{0.0};
   BallController ball_controller_;
   HurdleController hurdle_controller_;
   GoalController goal_controller_;

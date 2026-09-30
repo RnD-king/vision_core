@@ -18,6 +18,7 @@ int main(int argc, char **argv) {
   assert(std::abs(config.line_p2p.heading_gain - 1.0) < 1e-12);
   assert(std::abs(config.line_p2p.curvature_gain - 1.0) < 1e-12);
   assert(std::abs(config.line_p2p.short_post_collect_sec - 1.0) < 1e-12);
+  assert(std::abs(config.line_p2p.no_action_hold_sec - 2.0) < 1e-12);
   assert(std::abs(config.ball.far_speed_scale - 0.90) < 1e-12);
   assert(config.ball.tilt_down_min_hits == 7);
   assert(config.command.locomotion_backend ==

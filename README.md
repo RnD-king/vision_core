@@ -73,9 +73,10 @@ Jandi MJLab 어댑터는 실제 경기장 좌표를 line/object bbox와 RGB-D �
 
 velocity backend는 기존 연속속도 계산을 그대로 사용한다. P2P backend는
 `offset_gain`, `heading_gain`, `curvature_gain` 세 값만으로 LineGuide를
-PRE-P2P 속도 의도로 바꾼다. 6걸음 계열 action은 ACK부터 DONE까지 관측한
+PRE-P2P 속도 의도로 바꾼다. 5걸음·곡선·회전 후 직진 계열 action은
+ACK부터 DONE까지 관측한
 특징 중 실제 실행시간 후반 50%를 끝에 가까울수록 크게 선형 가중 평균하여
-다음 action을 고른다. 2걸음과 제자리회전처럼 짧은 action은 아직 DONE 시점의
+다음 action을 고른다. 1걸음과 제자리회전처럼 짧은 action은 DONE 시점의
 최신 프레임을 사용한다.
 
 실행 시 우선순위는 `공통 YAML < ROS params-file < ROS CLI -p`다. 따라서
@@ -242,12 +243,12 @@ controller의 mission action_request 존재
     -> kP2pAction backend: ActionCategory::kLocomotion
 ```
 
-기본 P2P primitive는 2/6걸음 직진, 2/6걸음 좌·우 곡선 전진, 2걸음
-후진/횡이동, 좌·우 제자리 회전이다. quantizer는 최종 `mission + phase`로
+기본 P2P primitive는 1/5걸음 직진, 좌·우 곡선 전진, 후진/횡이동,
+좌·우 제자리 회전, 제자리회전 후 직진이다. quantizer는 최종 `mission + phase`로
 Normal/Fine/Recovery 프로필을 먼저 고르고 각 프로필의 임계값으로 속도를
 양자화한다. LINE과 일반 접근은 Normal, 근접 접근·미세조정은 Fine,
-탐색·유실복구·라인 재획득은 Recovery다. Fine/Recovery 기본값은 매 2걸음 뒤
-다시 관측하도록 긴 6걸음 선택 임계값을 높여 두었다. 실제 P2P 모션 이동량에
+탐색·유실복구·라인 재획득은 Recovery다. Fine/Recovery 기본값은 매 1걸음 뒤
+다시 관측하도록 긴 5걸음 선택 임계값을 높여 두었다. 실제 P2P 모션 이동량에
 맞춰 `P2pMotionConfig` 또는 ROS의 `p2p_fine_*`, `p2p_recovery_*` 파라미터를
 조정한다. 유한하지 않은 속도나 모든 축이 deadband 안인 명령은 새 액션을
 만들지 않고 HOLD한다.

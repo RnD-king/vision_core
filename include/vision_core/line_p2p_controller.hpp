@@ -14,9 +14,12 @@ struct LineP2pConfig {
   double offset_gain{};
   double heading_gain{};
   double curvature_gain{};
-  // 2걸음/제자리회전처럼 짧은 locomotion action이 DONE된 뒤 다음 action을
+  // 1걸음/제자리회전처럼 짧은 locomotion action이 DONE된 뒤 다음 action을
   // 고르기 전에 정지 상태로 LineGuide를 모으는 시간이다.
   double short_post_collect_sec{};
+  // 유효 라인이 없거나 명령이 모든 deadband 안이면 별도 action 없이
+  // 현재 자세를 유지하며 새 locomotion 판단을 잠그는 시간이다.
+  double no_action_hold_sec{};
 };
 
 class LineP2pController {

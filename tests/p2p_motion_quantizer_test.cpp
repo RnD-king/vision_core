@@ -9,34 +9,49 @@
 int main() {
   using namespace vision_core;
 
+  static_assert(static_cast<std::uint16_t>(MissionAction::kTurnLeft) == 7);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kTurnRight) == 8);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kStepForwardOne) ==
+                10);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kStepForwardLeft) ==
+                11);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kStepForwardRight) ==
+                12);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kStepForwardFive) ==
+                13);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kTurnLeftAndStep) ==
+                18);
+  static_assert(static_cast<std::uint16_t>(MissionAction::kTurnRightAndStep) ==
+                19);
+
   P2pMotionQuantizer quantizer;
   assert(quantizer.Quantize({}) == LocomotionAction::kNone);
   assert(quantizer.Quantize({0.10, 0.0, 0.0}) ==
-         LocomotionAction::kWalkForwardTwo);
+         LocomotionAction::kStepForwardOne);
   assert(quantizer.Quantize({0.30, 0.0, 0.0}) ==
-         LocomotionAction::kWalkForwardSix);
+         LocomotionAction::kStepForwardFive);
   assert(quantizer.Quantize({0.30, 0.0, 0.20}) ==
-         LocomotionAction::kWalkForwardLeftSix);
+         LocomotionAction::kTurnLeftAndStep);
   assert(quantizer.Quantize({0.30, 0.0, -0.20}) ==
-         LocomotionAction::kWalkForwardRightSix);
+         LocomotionAction::kTurnRightAndStep);
   assert(quantizer.Quantize({0.10, 0.0, 0.20}) ==
-         LocomotionAction::kWalkForwardLeftTwo);
+         LocomotionAction::kStepForwardLeft);
   assert(quantizer.Quantize({-0.10, 0.0, 0.0}) ==
-         LocomotionAction::kWalkBackwardTwo);
+         LocomotionAction::kStepBack);
   assert(quantizer.Quantize({0.02, 0.10, 0.0}) ==
-         LocomotionAction::kWalkLeftTwo);
+         LocomotionAction::kLeftSideStep);
   assert(quantizer.Quantize({0.02, -0.10, 0.0}) ==
-         LocomotionAction::kWalkRightTwo);
+         LocomotionAction::kRightSideStep);
   assert(quantizer.Quantize({0.0, 0.0, 0.20}) ==
-         LocomotionAction::kTurnLeftInPlace);
+         LocomotionAction::kTurnLeft);
   assert(quantizer.Quantize({0.0, 0.0, -0.20}) ==
-         LocomotionAction::kTurnRightInPlace);
+         LocomotionAction::kTurnRight);
 
   const double nan = std::numeric_limits<double>::quiet_NaN();
   assert(quantizer.Quantize({nan, 0.0, 0.0}) ==
          LocomotionAction::kNone);
-  assert(ToActionCode(LocomotionAction::kWalkForwardSix) ==
-         MissionAction::kWalkForwardSix);
+  assert(ToActionCode(LocomotionAction::kStepForwardFive) ==
+         MissionAction::kStepForwardFive);
 
   assert(SelectP2pMotionProfile(
              MissionType::kLine, 0) == P2pMotionProfile::kNormal);
@@ -57,33 +72,33 @@ int main() {
              static_cast<int>(GoalMode::kSearch)) ==
          P2pMotionProfile::kRecovery);
 
-  // 같은 속도라도 Normal은 6걸음, Fine/Recovery는 2걸음으로 짧게
+  // 같은 속도라도 Normal은 5걸음, Fine/Recovery는 1걸음으로 짧게
   // 재관측한다.
   assert(quantizer.Quantize({0.30, 0.0, 0.0}, MissionType::kLine, 0) ==
-         LocomotionAction::kWalkForwardSix);
+         LocomotionAction::kStepForwardFive);
   assert(quantizer.Quantize({}, MissionType::kLine, 0) ==
-         LocomotionAction::kHoldPoseTwo);
+         LocomotionAction::kNone);
   assert(quantizer.Quantize({0.30, 0.0, 0.20}, MissionType::kLine, 0) ==
-         LocomotionAction::kWalkForwardLeftFour);
+         LocomotionAction::kStepForwardLeft);
   assert(quantizer.Quantize({0.30, 0.0, -0.20}, MissionType::kLine, 0) ==
-         LocomotionAction::kWalkForwardRightFour);
+         LocomotionAction::kStepForwardRight);
   assert(quantizer.Quantize({0.30, 0.0, 0.30}, MissionType::kLine, 0) ==
-         LocomotionAction::kWalkForwardLeftSix);
+         LocomotionAction::kTurnLeftAndStep);
   assert(quantizer.Quantize({0.30, 0.0, -0.30}, MissionType::kLine, 0) ==
-         LocomotionAction::kWalkForwardRightSix);
+         LocomotionAction::kTurnRightAndStep);
   assert(quantizer.Quantize({0.10, 0.0, 0.05}, MissionType::kLine, 0) ==
-         LocomotionAction::kWalkForwardTwo);
+         LocomotionAction::kStepForwardOne);
   assert(quantizer.Quantize({0.10, 0.0, 0.10}, MissionType::kLine, 0) ==
-         LocomotionAction::kTurnLeftInPlace);
+         LocomotionAction::kTurnLeft);
   assert(quantizer.Quantize({0.10, 0.0, -0.10}, MissionType::kLine, 0) ==
-         LocomotionAction::kTurnRightInPlace);
+         LocomotionAction::kTurnRight);
   assert(quantizer.Quantize(
              {0.30, 0.0, 0.0}, MissionType::kBall,
              static_cast<int>(BallMode::kTiltCameraDownAndApproach)) ==
-         LocomotionAction::kWalkForwardTwo);
+         LocomotionAction::kStepForwardOne);
   assert(quantizer.Quantize(
              {0.30, 0.0, 0.0}, MissionType::kGoal,
              static_cast<int>(GoalMode::kSearch)) ==
-         LocomotionAction::kWalkForwardTwo);
+         LocomotionAction::kStepForwardOne);
   return 0;
 }

@@ -14,12 +14,12 @@ MissionAction GoalFineAction(const MotionCommand &command) {
                             : MissionAction::kTurnRight;
   }
   if (std::abs(command.vy) > 1e-9) {
-    return command.vy > 0.0 ? MissionAction::kStepLeft
-                            : MissionAction::kStepRight;
+    return command.vy > 0.0 ? MissionAction::kLeftSideStep
+                            : MissionAction::kRightSideStep;
   }
   if (std::abs(command.vx) > 1e-9) {
     return command.vx > 0.0 ? MissionAction::kStepForwardHalf
-                            : MissionAction::kStepBackward;
+                            : MissionAction::kStepBack;
   }
   return MissionAction::kNone;
 }
@@ -35,7 +35,7 @@ MissionAction RequestedAction(MissionType mission, const BallResult &ball,
       return GoalFineAction(goal.command);
     }
     if (goal.action_request == GoalActionRequest::kFineAdjustHold) {
-      return MissionAction::kFineAdjustHold;
+      return MissionAction::kDefaultPoseMode;
     }
     return MissionAction::kNone;
   }
@@ -44,11 +44,11 @@ MissionAction RequestedAction(MissionType mission, const BallResult &ball,
     case BallActionRequest::kFineAdjustForward:
       return MissionAction::kStepForwardHalf;
     case BallActionRequest::kPickup:
-      return MissionAction::kPickupBall;
+      return MissionAction::kPickBall;
     case BallActionRequest::kStandUp:
-      return MissionAction::kStandUp;
+      return MissionAction::kDefaultPosition;
     case BallActionRequest::kVerifyPickup:
-      return MissionAction::kVerifyPickup;
+      return MissionAction::kRecatch;
     case BallActionRequest::kNone:
       return MissionAction::kNone;
     }
@@ -56,9 +56,11 @@ MissionAction RequestedAction(MissionType mission, const BallResult &ball,
   if (mission != MissionType::kHurdle) return MissionAction::kNone;
   switch (hurdle.action_request) {
   case HurdleActionRequest::kContactWalk:
-    return MissionAction::kHurdleContactWalk;
+    // 접촉 위치까지의 짧은 전진과 실제 허들 넘기를 서로 다른 action으로
+    // 유지해야 DONE 뒤 다음 단계가 억제되지 않는다.
+    return MissionAction::kStepForwardOne;
   case HurdleActionRequest::kCross:
-    return MissionAction::kCrossHurdle;
+    return MissionAction::kHurdle;
   case HurdleActionRequest::kNone:
     break;
   }
@@ -68,37 +70,28 @@ MissionAction RequestedAction(MissionType mission, const BallResult &ball,
 ActionExecutionKind ExecutionKindForMissionAction(MissionAction action) {
   switch (action) {
   case MissionAction::kStepForwardHalf:
-  case MissionAction::kStepForward:
-  case MissionAction::kStepBackward:
-  case MissionAction::kStepLeft:
-  case MissionAction::kStepRight:
+  case MissionAction::kStepBack:
+  case MissionAction::kLeftSideStep:
+  case MissionAction::kRightSideStep:
   case MissionAction::kTurnLeft:
   case MissionAction::kTurnRight:
+  case MissionAction::kStepForwardOne:
+  case MissionAction::kStepForwardLeft:
+  case MissionAction::kStepForwardRight:
+  case MissionAction::kStepForwardFive:
+  case MissionAction::kTurnLeftAndStep:
+  case MissionAction::kTurnRightAndStep:
     return ActionExecutionKind::kVelocityCompatible;
-  case MissionAction::kFineAdjustHold:
-  case MissionAction::kHoldPoseTwo:
+  case MissionAction::kDefaultPoseMode:
     return ActionExecutionKind::kStationary;
-  case MissionAction::kPickupBall:
-  case MissionAction::kStandUp:
-  case MissionAction::kHurdleContactWalk:
-  case MissionAction::kCrossHurdle:
+  case MissionAction::kDefaultPosition:
+  case MissionAction::kWalkMode:
+  case MissionAction::kPickBall:
+  case MissionAction::kHurdle:
   case MissionAction::kShoot:
-  case MissionAction::kVerifyPickup:
+  case MissionAction::kRecatch:
     return ActionExecutionKind::kDiscrete;
   case MissionAction::kNone:
-  case MissionAction::kWalkForwardTwo:
-  case MissionAction::kWalkForwardLeftTwo:
-  case MissionAction::kWalkForwardRightTwo:
-  case MissionAction::kWalkForwardSix:
-  case MissionAction::kWalkForwardLeftSix:
-  case MissionAction::kWalkForwardRightSix:
-  case MissionAction::kWalkBackwardTwo:
-  case MissionAction::kWalkLeftTwo:
-  case MissionAction::kWalkRightTwo:
-  case MissionAction::kTurnLeftInPlace:
-  case MissionAction::kTurnRightInPlace:
-  case MissionAction::kWalkForwardLeftFour:
-  case MissionAction::kWalkForwardRightFour:
     break;
   }
   return ActionExecutionKind::kNone;
@@ -183,29 +176,29 @@ bool IsRlStopping(MissionType mission, const BallResult &ball,
 }
 
 bool IsLongLineLocomotionAction(MissionAction action) {
-  return action == MissionAction::kWalkForwardSix ||
-         action == MissionAction::kWalkForwardLeftSix ||
-         action == MissionAction::kWalkForwardRightSix ||
-         action == MissionAction::kWalkForwardLeftFour ||
-         action == MissionAction::kWalkForwardRightFour;
+  return action == MissionAction::kStepForwardFive ||
+         action == MissionAction::kStepForwardLeft ||
+         action == MissionAction::kStepForwardRight ||
+         action == MissionAction::kTurnLeftAndStep ||
+         action == MissionAction::kTurnRightAndStep;
 }
 
 ActionExecutionKind ExecutionKindForLocomotionAction(MissionAction action) {
-  return action == MissionAction::kHoldPoseTwo
-             ? ActionExecutionKind::kStationary
+  return action == MissionAction::kNone
+             ? ActionExecutionKind::kNone
              : ActionExecutionKind::kVelocityCompatible;
 }
 
 double LocomotionTargetYawRad(MissionAction action,
                               const MotionCommand &command) {
   if (!std::isfinite(command.wz)) return 0.0;
-  if (action == MissionAction::kWalkForwardLeftSix ||
-      action == MissionAction::kTurnLeftInPlace) {
+  if (action == MissionAction::kTurnLeft ||
+      action == MissionAction::kTurnRight ||
+      action == MissionAction::kTurnLeftAndStep ||
+      action == MissionAction::kTurnRightAndStep) {
+    // 방향은 action 코드가 구분하므로 라인 회전 목표각은 항상
+    // 양수 크기로 전달한다. SHOOT의 signed yaw와는 별도 규약이다.
     return std::abs(command.wz);
-  }
-  if (action == MissionAction::kWalkForwardRightSix ||
-      action == MissionAction::kTurnRightInPlace) {
-    return -std::abs(command.wz);
   }
   return 0.0;
 }
@@ -295,11 +288,11 @@ ControlCommand ControlCommandCoordinator::Compute(
     pending_ready_ = pending_ready_ || feedback.ready;
     if (feedback.done) {
       if (pending_action_category_ == ActionCategory::kMission) {
-        // FINE_ADJUST_HOLD는 정지 상태에서 관측을 더 모으기 위해 연속 실행될
+        // DEFAULT_POSE_MODE는 정지 상태에서 관측을 더 모으기 위해 연속 실행될
         // 수 있는 반복 측정 액션이다. DONE 뒤 같은 HOLD가 다시 필요하면 새
         // ID로 허용하고, 나머지 단발 미션 액션만 기존처럼 억제한다.
         suppressed_mission_action_ =
-            pending_action_ == MissionAction::kFineAdjustHold
+            pending_action_ == MissionAction::kDefaultPoseMode
                 ? MissionAction::kNone
                 : pending_action_;
       }
@@ -582,19 +575,19 @@ LINE이면 항상 0이다. camera_request도 선택된 미션 결과에서만 �
 
 2. controller의 action_request -> MissionAction 변환
 ----------------------------------------------------
-- BALL/FINE_ADJUST_FORWARD -> STEP_FORWARD_HALF(1)
-- BALL/PICKUP              -> PICKUP_BALL(8)
-- BALL/STAND_UP            -> STAND_UP(9)
-- BALL/VERIFY_PICKUP       -> VERIFY_PICKUP(13)
-- HURDLE/CONTACT_WALK      -> HURDLE_CONTACT_WALK(10)
-- HURDLE/CROSS             -> CROSS_HURDLE(11)
-- GOAL/SHOOT               -> SHOOT(12)
+- BALL/FINE_ADJUST_FORWARD -> STEP_FORWARD_HALF(3)
+- BALL/PICKUP              -> PICK_BALL(14)
+- BALL/STAND_UP            -> DEFAULT_POSITION(1)
+- BALL/VERIFY_PICKUP       -> RECATCH(15)
+- HURDLE/CONTACT_WALK      -> STEP_FORWARD_ONE(10)
+- HURDLE/CROSS             -> HUDDLE(16)
+- GOAL/SHOOT               -> SHOOT(17)
 - GOAL/FINE_ADJUST         -> goal_result.command에서 0이 아닌 축을 읽어 변환
-    wz > 0: TURN_LEFT(6),       wz < 0: TURN_RIGHT(7)
-    vy > 0: STEP_LEFT(4),       vy < 0: STEP_RIGHT(5)
-    vx > 0: STEP_FORWARD_HALF(1), vx < 0: STEP_BACKWARD(3)
+    wz > 0: TURN_LEFT(7),       wz < 0: TURN_RIGHT(8)
+    vy > 0: LEFT_SIDE_STEP(5),  vy < 0: RIGHT_SIDE_STEP(6)
+    vx > 0: STEP_FORWARD_HALF(3), vx < 0: STEP_BACK(4)
   여러 축이 동시에 0이 아니면 wz, vy, vx 순서로 하나만 선택한다.
-- GOAL/FINE_ADJUST_HOLD    -> FINE_ADJUST_HOLD(14)
+- GOAL/FINE_ADJUST_HOLD    -> DEFAULT_POSE_MODE(2)
 
 goal.mode != LINE_FOLLOW인 동안에는 Goal action만 검사한다. 그 외에는 Ball,
 Hurdle 순서로 검사한다. 각 controller가 kNone을 요청하면 action=NONE(0)이다.
@@ -617,13 +610,13 @@ Hurdle 순서로 검사한다. 각 controller가 kNone을 요청하면 action=NO
     예약 action이 있으면 실행 중 action으로 승격하고, 없으면 pending action을
     해제한다. 일반 미션 action은 같은 controller 상태에서
     즉시 재발급하지 않으며 request=NONE 뒤 억제를 해제한다. 반복 관측용
-    FINE_ADJUST_HOLD(14)는 예외로 DONE 뒤 같은 요청도 새 ID로 발급한다.
+    DEFAULT_POSE_MODE(2)는 예외로 DONE 뒤 같은 요청도 새 ID로 발급한다.
 
 ACK/READY/DONE은 feedback.action_id가 현재 실행 또는 예약 ID와 맞을 때만
 반영된다.
 
 일반 Mission action은 DONE 뒤 controller가 request=NONE을 출력할 때까지 같은
-action을 억제한다. FINE_ADJUST_HOLD와 P2P locomotion action은 반복 가능하므로
+action을 억제한다. DEFAULT_POSE_MODE와 P2P locomotion action은 반복 가능하므로
 DONE 뒤 같은 요청에도 새 action_id를 발급한다.
 
 P2P backend
@@ -653,13 +646,13 @@ BALL
     VELOCITY, BALL(2), phase=10, 0/0/0, NONE, camera=NONE,
     control_phase=RL_STOPPING(1)
 - FINE_ADJUST_FOR_PICKUP(3)
-    ACTION, BALL(2), phase=3, 0/0/0, STEP_FORWARD_HALF(1), camera=NONE
+    ACTION, BALL(2), phase=3, 0/0/0, STEP_FORWARD_HALF(3), camera=NONE
 - PICKUP_BALL(4)
-    ACTION, BALL(2), phase=4, 0/0/0, PICKUP_BALL(8), camera=NONE
+    ACTION, BALL(2), phase=4, 0/0/0, PICK_BALL(14), camera=NONE
 - VERIFY_PICKUP(5)
-    ACTION, BALL(2), phase=5, 0/0/0, VERIFY_PICKUP(13), camera=NONE
+    ACTION, BALL(2), phase=5, 0/0/0, RECATCH(15), camera=NONE
 - STAND_UP_AFTER_PICKUP(6)
-    ACTION, BALL(2), phase=6, 0/0/0, STAND_UP(9), camera=NONE
+    ACTION, BALL(2), phase=6, 0/0/0, DEFAULT_POSITION(1), camera=NONE
 - RETURN_CAMERA_TO_LINE(7)
     VELOCITY, BALL(2), phase=7, 0/0/0, NONE, camera=FORWARD(2)
 - BALL_RECOVERY_FORWARD(8)
@@ -677,9 +670,9 @@ HURDLE
     VELOCITY, HURDLE(4), phase=6, 0/0/0, NONE, camera=NONE,
     control_phase=RL_STOPPING(1)
 - CONTACT_WALK(3)
-    ACTION, HURDLE(4), phase=3, 0/0/0, HURDLE_CONTACT_WALK(10), camera=NONE
+    ACTION, HURDLE(4), phase=3, 0/0/0, STEP_FORWARD_ONE(10), camera=NONE
 - CROSS(4)
-    ACTION, HURDLE(4), phase=4, 0/0/0, CROSS_HURDLE(11), camera=NONE
+    ACTION, HURDLE(4), phase=4, 0/0/0, HUDDLE(16), camera=NONE
 - RETURN_CAMERA_TO_LINE(5)
     VELOCITY, HURDLE(4), phase=5, 0/0/0, NONE, camera=FORWARD(2)
 GOAL
@@ -699,20 +692,20 @@ GOAL
 - FINE_ADJUST(5), 미세 동작 요청이 있을 때
     ACTION, GOAL(3), phase=5, 0/0/0, 방향에 맞는 STEP/TURN, camera=NONE
 - FINE_ADJUST(5), settle/재측정 구간
-    ACTION, GOAL(3), phase=5, 0/0/0, FINE_ADJUST_HOLD(14), camera=NONE
+    ACTION, GOAL(3), phase=5, 0/0/0, DEFAULT_POSE_MODE(2), camera=NONE
 - SHOOT(6)
-    ACTION, GOAL(3), phase=6, 0/0/0, SHOOT(12), camera=NONE
+    ACTION, GOAL(3), phase=6, 0/0/0, SHOOT(17), camera=NONE
 - RETURN_CAMERA_TO_LINE(7)
     VELOCITY, GOAL(3), phase=7, 0/0/0, NONE, camera=FORWARD(2)
 - HEADING_RECOVERY(8)
     VELOCITY, GOAL(3), phase=8, line_candidate, NONE, camera=NONE
 pending ACTION 우선 규칙의 뜻
 ----------------------------
-예를 들어 STEP_LEFT(id=21)를 한 번 발급했다면, controller가 다음 프레임에 계산한
+예를 들어 LEFT_SIDE_STEP(id=21)를 한 번 발급했다면, controller가 다음 프레임에 계산한
 상태별 기본 cmd보다 id=21의 전달/실행 완료 확인을 먼저 처리한다.
 
-- 아직 ACK가 없으면: ACTION + STEP_LEFT + id=21을 다시 출력한다.
-- ACK만 있고 DONE이 없으면: HOLD + STEP_LEFT + id=21을 출력한다.
+- 아직 ACK가 없으면: ACTION + LEFT_SIDE_STEP + id=21을 다시 출력한다.
+- ACK만 있고 DONE이 없으면: HOLD + LEFT_SIDE_STEP + id=21을 출력한다.
   이 HOLD는 새 동작 명령이 아니라 "실행기가 이미 받은 id=21이 끝나기를 기다리는
   중"이라는 내부/통합 cmd 표시다. ROS action_cmd 토픽에는 중복 발행하지 않는다.
 - DONE이 오면: id=21을 해제하고 그때 다음 상태의 ACTION을 새 ID로 발급하거나
