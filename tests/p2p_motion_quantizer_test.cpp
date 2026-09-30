@@ -92,6 +92,14 @@ int main() {
          LocomotionAction::kTurnLeft);
   assert(quantizer.Quantize({0.10, 0.0, -0.10}, MissionType::kLine, 0) ==
          LocomotionAction::kTurnRight);
+  // LINE P2P는 실제 제작된 전진/조향 동작만 사용한다. 공·허들·골대용
+  // 후진/횡이동 입력이 들어와도 라인 action으로 내보내지 않는다.
+  assert(quantizer.Quantize({-0.10, 0.0, 0.0}, MissionType::kLine, 0) ==
+         LocomotionAction::kNone);
+  assert(quantizer.Quantize({0.0, 0.10, 0.0}, MissionType::kLine, 0) ==
+         LocomotionAction::kNone);
+  assert(quantizer.Quantize({0.0, -0.10, 0.0}, MissionType::kLine, 0) ==
+         LocomotionAction::kNone);
   assert(quantizer.Quantize(
              {0.30, 0.0, 0.0}, MissionType::kBall,
              static_cast<int>(BallMode::kTiltCameraDownAndApproach)) ==

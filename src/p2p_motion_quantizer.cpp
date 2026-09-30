@@ -124,7 +124,12 @@ LocomotionAction P2pMotionQuantizer::QuantizeLineWithConfig(
   if (vx == 0.0 && vy == 0.0 && wz == 0.0) {
     return LocomotionAction::kNone;
   }
-  if (vx < 0.0) return LocomotionAction::kStepBack;
+
+  // LINE P2P는 전진/조향 전용이다. 후진과 횡이동은 공·허들·골대의
+  // 일반 P2P 경로에만 남기고 라인 모드에서는 잘못된 입력으로 동작을
+  // 선택하지 않는다.
+  if (vx < 0.0 || vy != 0.0) return LocomotionAction::kNone;
+
   if (vx > 0.0) {
     const bool long_walk = vx >= long_forward_vx;
     const double abs_wz = std::abs(wz);
@@ -144,10 +149,6 @@ LocomotionAction P2pMotionQuantizer::QuantizeLineWithConfig(
                       : LocomotionAction::kStepForwardRight;
     }
     return LocomotionAction::kStepForwardFive;
-  }
-  if (vy != 0.0) {
-    return vy > 0.0 ? LocomotionAction::kLeftSideStep
-                    : LocomotionAction::kRightSideStep;
   }
   return wz > 0.0 ? LocomotionAction::kTurnLeft
                   : LocomotionAction::kTurnRight;
