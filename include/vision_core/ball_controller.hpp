@@ -42,6 +42,7 @@ struct BallConfig {
   int lost_frames{};
   double smooth_alpha{};
   double far_u_des_norm{};
+  double approach_u_deadband{};
   // Temporary compatibility fallback for callers that do not provide the
   // continuously-computed line vx.  New callers use far_speed_scale only.
   double far_vx{};
@@ -128,6 +129,7 @@ struct BallResult {
   BallMode mode{BallMode::kLineFollow};
   TrackedBall tracked;
   MotionCommand command;
+  CruiseDecision cruise;
 };
 
 class BallController {

@@ -47,6 +47,7 @@ struct GoalConfig {
   // 정지 관측하므로 사용하지 않는다.
   double search_wz{};
   double target_u_norm{};
+  double approach_u_deadband{};
   // 골대 앞에서는 항상 저속으로 접근한다.
   double approach_vx{};
   double approach_wz_gain{};
@@ -134,6 +135,7 @@ struct GoalResult {
   // 로봇 yaw 기준 좌회전(+), 우회전(-)이며 SHOOT action에만 사용한다.
   double shoot_yaw_rad{0.0};
   MotionCommand command;
+  CruiseDecision cruise;
 };
 
 class GoalController {

@@ -73,6 +73,8 @@ void TestFarSpeedAndRollingWindowTrigger() {
       high, 100, 100, 0.00, 0.8, true, Forward());
   assert(result.mode == BallMode::kApproachBall);
   ExpectNear(result.command.vx, 0.8 * cfg.far_speed_scale);
+  assert(result.cruise.applicable);
+  assert(result.cruise.direction == vision_core::CruiseDirection::kRight);
 
   result = controller.Compute(
       low, 100, 100, 0.02, 0.8, true, Forward());
@@ -85,6 +87,8 @@ void TestFarSpeedAndRollingWindowTrigger() {
   result = controller.Compute(
       std::nullopt, 100, 100, 0.06, 0.8, true, Forward());
   assert(result.mode == BallMode::kApproachBall);
+  assert(result.cruise.applicable);
+  assert(result.cruise.direction == vision_core::CruiseDirection::kNone);
   // Background line control has now entered recovery and reports a positive
   // coast speed. FAR must keep the normal TRACK speed captured on entry.
   result = controller.Compute(
@@ -118,6 +122,32 @@ void TestPositiveRecoveryCannotOverwriteTrackingReference() {
       target, 100, 100, 0.04, 0.12, false, Forward());
   assert(result.mode == BallMode::kApproachBall);
   ExpectNear(result.command.vx, 0.8 * cfg.far_speed_scale);
+}
+
+void TestBallApproachCruiseDirections() {
+  BallConfig cfg = vision_core::LoadDefaultAlgorithmConfig().ball;
+  cfg.upper_acquire_v_norm = 1.01;
+  cfg.stable_window = 1;
+  cfg.stable_min_hits = 1;
+  cfg.smooth_alpha = 1.0;
+  cfg.tilt_down_min_hits = 99;
+  cfg.approach_u_deadband = 0.05;
+
+  BallController left(cfg);
+  auto result = left.Compute(Target(0.40, 0.50), 100, 100, 0.0, 0.8,
+                             true, Forward());
+  assert(result.cruise.direction == vision_core::CruiseDirection::kLeft);
+
+  BallController straight(cfg);
+  result = straight.Compute(Target(0.50, 0.50), 100, 100, 0.0, 0.8,
+                            true, Forward());
+  assert(result.cruise.direction ==
+         vision_core::CruiseDirection::kStraight);
+
+  BallController right(cfg);
+  result = right.Compute(Target(0.60, 0.50), 100, 100, 0.0, 0.8,
+                         true, Forward());
+  assert(result.cruise.direction == vision_core::CruiseDirection::kRight);
 }
 
 void TestRecoveryAloneIsNotAForwardReference() {
@@ -734,6 +764,7 @@ void TestCApiV2V3LayoutAndPrecomputedSelector() {
 
 int main() {
   TestFarSpeedAndRollingWindowTrigger();
+  TestBallApproachCruiseDirections();
   TestPositiveRecoveryCannotOverwriteTrackingReference();
   TestRecoveryAloneIsNotAForwardReference();
   TestDefaultStableFramesCountTowardTiltAndRawScreenWins();

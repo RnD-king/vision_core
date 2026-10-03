@@ -206,6 +206,22 @@ void TestApproachContinuesWithBackboardOnly() {
   assert(result.mode == GoalMode::kApproach);
   assert(result.tracked.visible);
   assert(result.command.vx > 0.0);
+  assert(result.cruise.applicable);
+  assert(result.cruise.direction == vision_core::CruiseDirection::kStraight);
+
+  auto right_backboard = Target(0.65, 0.20);
+  right_backboard.class_id = 3;
+  result = controller.Compute(std::nullopt, right_backboard,
+                              Pose(0.0, 1.10, 0.0), 100, 100, 0.45,
+                              false, GoalView());
+  assert(result.cruise.direction == vision_core::CruiseDirection::kRight);
+
+  result = controller.Compute(std::nullopt, std::nullopt, {}, 100, 100, 0.5,
+                              false, GoalView());
+  assert(result.mode == GoalMode::kApproach);
+  assert(!result.tracked.visible);
+  assert(result.cruise.applicable);
+  assert(result.cruise.direction == vision_core::CruiseDirection::kNone);
 }
 
 void TestFineAdjustUsesActionHoldInsteadOfRlVelocity() {

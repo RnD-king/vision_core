@@ -4,16 +4,16 @@
 #include <optional>
 #include <vector>
 
+#include "vision_core/cruise_selector.hpp"
 #include "vision_core/types.hpp"
 
 namespace vision_core {
 
-// P2P 라인 의도를 만드는 데 필요한 gain만 둔다. 임계값과 최종 action 구간은
-// 기존 P2pMotionConfig가 계속 소유한다.
+// 정상 P2P LINE의 O/H score와 direct 3-action 구간을 정의한다.
 struct LineP2pConfig {
   double offset_gain{};
   double heading_gain{};
-  double curvature_gain{};
+  double steering_deadband{};
   // 1걸음/제자리회전처럼 짧은 locomotion action이 DONE된 뒤 다음 action을
   // 고르기 전에 정지 상태로 LineGuide를 모으는 시간이다.
   double short_post_collect_sec{};
@@ -24,14 +24,12 @@ struct LineP2pConfig {
 
 class LineP2pController {
 public:
-  LineP2pController(const LineP2pConfig &config,
-                    const RuleConfig &line_config);
+  explicit LineP2pController(const LineP2pConfig &config);
 
-  MotionCommand Compute(const LineGuide &guide) const;
+  CruiseDecision Compute(const LineGuide &guide) const;
 
 private:
   LineP2pConfig config_;
-  RuleConfig line_config_;
 };
 
 // locomotion action 하나가 실행되는 동안 LineGuide를 모은다. DONE 시점에 실제

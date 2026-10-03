@@ -284,19 +284,34 @@ int main() {
   // 1단계 큐 명령으로 발행한다.
   ControlCommandCoordinator ready_coordinator(p2p_config);
   command = ready_coordinator.Compute({}, {}, {},
-                                      MotionCommand{0.30, 0.0, 0.0});
+                                      MotionCommand{0.30, 0.0, 0.0}, {},
+                                      {true, CruiseDirection::kStraight,
+                                       0.0, 0.1});
   const auto ready_current_id = command.action_id;
   command = ready_coordinator.Compute({}, {}, {},
                                       MotionCommand{0.30, 0.0, 0.0},
-                                      {ready_current_id, true, false, false});
+                                      {ready_current_id, true, false, false},
+                                      {true, CruiseDirection::kStraight,
+                                       0.0, 0.1});
   assert(command.command_type == CommandType::kHold);
   command = ready_coordinator.Compute({}, {}, {},
                                       MotionCommand{0.30, 0.0, -0.35},
-                                      {ready_current_id, true, false, true});
+                                      {ready_current_id, true, false, true},
+                                      {true, CruiseDirection::kNone,
+                                       0.0, 0.1});
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action_id == ready_current_id);
+  assert(command.action == MissionAction::kStepForwardFive);
+
+  command = ready_coordinator.Compute({}, {}, {},
+                                      MotionCommand{0.30, 0.0, -0.35},
+                                      {ready_current_id, true, false, true},
+                                      {true, CruiseDirection::kRight,
+                                       0.2, 0.1});
   assert(command.command_type == CommandType::kAction);
-  assert(command.action == MissionAction::kTurnRightAndStep);
+  assert(command.action == MissionAction::kStepForwardRight);
   assert(command.action_id != ready_current_id);
-  assert(command.action_yaw_rad == 0.35);
+  assert(command.action_yaw_rad == 0.0);
   const auto queued_id = command.action_id;
 
   command = ready_coordinator.Compute({}, {}, {},
@@ -304,14 +319,14 @@ int main() {
                                       {queued_id, true, false, false});
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == queued_id);
-  assert(command.action_yaw_rad == 0.35);
+  assert(command.action_yaw_rad == 0.0);
 
   command = ready_coordinator.Compute({}, {}, {},
                                       MotionCommand{0.30, 0.0, -0.35},
                                       {ready_current_id, true, true, false});
   assert(command.command_type == CommandType::kHold);
   assert(command.action_id == queued_id);
-  assert(command.action_yaw_rad == 0.35);
+  assert(command.action_yaw_rad == 0.0);
 
   // 단발 시험 게이트가 닫혀 있으면 READY를 받아도 다음 action을 예약하지
   // 않고 현재 action의 DONE만 기다린다.
@@ -419,11 +434,34 @@ int main() {
   ball.action_request = BallActionRequest::kNone;
   ball.mode = BallMode::kApproachBall;
   ball.command = {0.30, 0.0, -0.20};
+  ball.cruise = {true, CruiseDirection::kRight, 0.2, 0.1};
   command = p2p_coordinator.Compute(ball, hurdle, goal, {});
   assert(command.command_type == CommandType::kAction);
   assert(command.action_category == ActionCategory::kLocomotion);
-  assert(command.action == MissionAction::kTurnRightAndStep);
-  assert(command.action_yaw_rad == 0.20);
+  assert(command.action == MissionAction::kStepForwardRight);
+  assert(command.action_yaw_rad == 0.0);
+
+  // direct phase의 NONE은 legacy command가 남아 있어도 quantizer로
+  // fall through하지 않고 HOLD한다.
+  ControlCommandCoordinator ball_none_coordinator(p2p_config);
+  ball = {};
+  ball.active = true;
+  ball.mode = BallMode::kApproachBall;
+  ball.command = {0.30, 0.0, -0.35};
+  ball.cruise = {true, CruiseDirection::kNone, 0.0, 0.1};
+  command = ball_none_coordinator.Compute(ball, {}, {}, {});
+  assert(command.command_type == CommandType::kHold);
+  assert(command.action == MissionAction::kNone);
+
+  ControlCommandCoordinator goal_direct_coordinator(p2p_config);
+  goal = {};
+  goal.active = true;
+  goal.mode = GoalMode::kApproach;
+  goal.command = {0.25, 0.0, 0.0};
+  goal.cruise = {true, CruiseDirection::kLeft, -0.2, 0.1};
+  command = goal_direct_coordinator.Compute({}, {}, goal, {});
+  assert(command.command_type == CommandType::kAction);
+  assert(command.action == MissionAction::kStepForwardLeft);
 
   // P2P의 영속 정지는 /cmd_vel 대신 새 액션을 만들지 않는 HOLD다.
   ControlCommandCoordinator p2p_idle(p2p_config);

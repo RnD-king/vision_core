@@ -60,7 +60,7 @@ vision_algorithm:
   line_p2p:
     offset_gain: 1.0
     heading_gain: 1.0
-    curvature_gain: 1.0
+    steering_deadband: 0.10
     short_post_collect_sec: 1.0
     no_action_hold_sec: 2.0
 
@@ -70,6 +70,7 @@ vision_algorithm:
     lost_frames: 5
     smooth_alpha: 0.45
     far_u_des_norm: 0.50
+    approach_u_deadband: 0.025
     far_vx: 0.35
     far_vx_min: 0.10
     far_wz_max: 0.80
@@ -165,6 +166,7 @@ vision_algorithm:
     # 호환용 설정. 현재 백보드 search는 정지 관측하며 회전하지 않는다.
     search_wz: 0.30
     target_u_norm: 0.50
+    approach_u_deadband: 0.025
     approach_vx: 0.25
     approach_wz_gain: 2.0
     approach_wz_max: 0.70

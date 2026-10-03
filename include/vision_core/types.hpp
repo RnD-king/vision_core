@@ -64,9 +64,13 @@ struct LineGuide {
   double heading_rad{0.0};
   // 먼 점군 방향각 - 가까운 점군 방향각. 오른쪽 커브가 양수다.
   double curvature_rad{0.0};
-  // 점 개수, 세로 분포, 두 local fit 잔차를 합친 0..1 기하 신뢰도.
+  // 가까운 점 개수, 세로 분포, near fit 잔차를 합친 0..1 O/H 신뢰도.
+  // far fit 기반 curvature 진단 유효성과는 독립적이다.
   double confidence{0.0};
   bool valid{false};
+  // curvature는 먼 점군 fit까지 성공했을 때만 유효하다. 정상 P2P LINE
+  // 조향은 이 값과 무관하게 offset/heading validity만 사용한다.
+  bool curvature_valid{false};
 };
 
 struct Features {
@@ -206,6 +210,22 @@ enum class MissionAction {
   kShoot = 17,
   kTurnLeftAndStep = 18,
   kTurnRightAndStep = 19,
+};
+
+enum class CruiseDirection {
+  kNone = 0,
+  kLeft = 1,
+  kStraight = 2,
+  kRight = 3,
+};
+
+// applicable은 현재 mission phase가 direct cruise 대상인지를 나타낸다.
+// applicable=true, direction=NONE은 quantizer fallback이 아니라 HOLD다.
+struct CruiseDecision {
+  bool applicable{false};
+  CruiseDirection direction{CruiseDirection::kNone};
+  double error{0.0};
+  double deadband{0.0};
 };
 
 // action 숫자는 하나의 ROS 토픽으로 전달하지만, 생성 원인과 DONE 처리 규칙은

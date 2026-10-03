@@ -6,6 +6,8 @@
 
 #include "vision_core/ball_controller.hpp"
 
+#include "vision_core/cruise_selector.hpp"
+
 #include "vision_core/config_loader.hpp"
 
 #include <algorithm>
@@ -261,6 +263,12 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
       result.command.vx *= 0.5;
       result.command.wz *= 0.5;
     }
+    if (result.mode == BallMode::kApproachBall) {
+      result.cruise = SelectCruiseDecision(
+          true, smoothed_.visible,
+          smoothed_.u_norm - config_.far_u_des_norm,
+          config_.approach_u_deadband);
+    }
     last_command_ = result.command;
     return result;
   case BallMode::kBallRecoveryForward:
@@ -290,6 +298,10 @@ BallResult BallController::Compute(const std::optional<ObjectTarget> &ball_targe
                              : ComputeFarCommand(smoothed_);
         if (!recovery_down) {
           PushRecentCommand(result.command);
+          result.cruise = SelectCruiseDecision(
+              true, smoothed_.visible,
+              smoothed_.u_norm - config_.far_u_des_norm,
+              config_.approach_u_deadband);
         }
         last_command_ = result.command;
       }

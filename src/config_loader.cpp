@@ -1,5 +1,6 @@
 #include "vision_core/config_loader.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -37,6 +38,20 @@ void LoadP2p(const YAML::Node &node, P2pMotionConfig &config) {
          config.sharp_turn_yaw_threshold);
   Assign(node, "turn_in_place_vx_max", config.turn_in_place_vx_max);
   Assign(node, "lateral_dominance_ratio", config.lateral_dominance_ratio);
+}
+
+void RequireFiniteNonnegative(double value, const char *key) {
+  if (!std::isfinite(value) || value < 0.0) {
+    throw std::runtime_error(std::string("vision algorithm key '") + key +
+                             "' must be finite and >= 0");
+  }
+}
+
+void RequireUnitInterval(double value, const char *key) {
+  if (!std::isfinite(value) || value < 0.0 || value > 1.0) {
+    throw std::runtime_error(std::string("vision algorithm key '") + key +
+                             "' must be finite and in [0, 1]");
+  }
 }
 
 } // namespace
@@ -141,11 +156,18 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   const YAML::Node line_p2p = algorithm["line_p2p"];
   Assign(line_p2p, "offset_gain", config.line_p2p.offset_gain);
   Assign(line_p2p, "heading_gain", config.line_p2p.heading_gain);
-  Assign(line_p2p, "curvature_gain", config.line_p2p.curvature_gain);
+  Assign(line_p2p, "steering_deadband",
+         config.line_p2p.steering_deadband);
   Assign(line_p2p, "short_post_collect_sec",
          config.line_p2p.short_post_collect_sec);
   Assign(line_p2p, "no_action_hold_sec",
          config.line_p2p.no_action_hold_sec);
+  RequireFiniteNonnegative(config.line_p2p.offset_gain,
+                           "line_p2p.offset_gain");
+  RequireFiniteNonnegative(config.line_p2p.heading_gain,
+                           "line_p2p.heading_gain");
+  RequireFiniteNonnegative(config.line_p2p.steering_deadband,
+                           "line_p2p.steering_deadband");
 
   const YAML::Node ball = algorithm["ball"];
   Assign(ball, "stable_window", config.ball.stable_window);
@@ -153,6 +175,7 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(ball, "lost_frames", config.ball.lost_frames);
   Assign(ball, "smooth_alpha", config.ball.smooth_alpha);
   Assign(ball, "far_u_des_norm", config.ball.far_u_des_norm);
+  Assign(ball, "approach_u_deadband", config.ball.approach_u_deadband);
   Assign(ball, "far_vx", config.ball.far_vx);
   Assign(ball, "far_vx_min", config.ball.far_vx_min);
   Assign(ball, "far_wz_max", config.ball.far_wz_max);
@@ -218,6 +241,12 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
          config.ball.recovery_center_tolerance_norm);
   Assign(ball, "recovery_forward_vx", config.ball.recovery_forward_vx);
   Assign(ball, "recovery_turn_wz", config.ball.recovery_turn_wz);
+  RequireUnitInterval(config.ball.far_u_des_norm,
+                      "ball.far_u_des_norm");
+  RequireUnitInterval(config.ball.near_target_u_norm,
+                      "ball.near_target_u_norm");
+  RequireFiniteNonnegative(config.ball.approach_u_deadband,
+                           "ball.approach_u_deadband");
 
   const YAML::Node hurdle = algorithm["hurdle"];
   Assign(hurdle, "stable_window", config.hurdle.stable_window);
@@ -273,6 +302,7 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(goal, "camera_tilt_forward_vx", config.goal.camera_tilt_forward_vx);
   Assign(goal, "search_wz", config.goal.search_wz);
   Assign(goal, "target_u_norm", config.goal.target_u_norm);
+  Assign(goal, "approach_u_deadband", config.goal.approach_u_deadband);
   Assign(goal, "approach_vx", config.goal.approach_vx);
   Assign(goal, "approach_wz_gain", config.goal.approach_wz_gain);
   Assign(goal, "approach_wz_max", config.goal.approach_wz_max);
@@ -301,6 +331,9 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(goal, "fine_adjust_min_hits", config.goal.fine_adjust_min_hits);
   Assign(goal, "shoot_placeholder_sec", config.goal.shoot_placeholder_sec);
   Assign(goal, "rl_stop_duration_sec", config.goal.rl_stop_duration_sec);
+  RequireUnitInterval(config.goal.target_u_norm, "goal.target_u_norm");
+  RequireFiniteNonnegative(config.goal.approach_u_deadband,
+                           "goal.approach_u_deadband");
 
   const YAML::Node line_detection = algorithm["line_detection"];
   Assign(line_detection, "class_id", config.line_detection.class_id);

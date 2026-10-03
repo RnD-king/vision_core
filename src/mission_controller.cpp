@@ -17,15 +17,6 @@ bool IsLongLineLocomotionAction(MissionAction action) {
          action == MissionAction::kTurnRightAndStep;
 }
 
-bool IsInsideP2pDeadband(const MotionCommand &command,
-                         const P2pMotionConfig &config) {
-  const auto inside = [](double value, double deadband) {
-    return value == 0.0 || std::abs(value) < std::max(0.0, deadband);
-  };
-  return inside(command.vx, config.forward_deadband) &&
-         inside(command.vy, config.lateral_deadband) &&
-         inside(command.wz, config.yaw_deadband);
-}
 } // namespace
 
 MissionController::MissionController()
@@ -34,7 +25,7 @@ MissionController::MissionController()
 MissionController::MissionController(const MissionControllerConfig &config)
     : config_(config),
       line_controller_(config.line, config.line_observation_dt),
-      line_p2p_controller_(config.line_p2p, config.line),
+      line_p2p_controller_(config.line_p2p),
       ball_controller_(config.ball), hurdle_controller_(config.hurdle),
       goal_controller_(config.goal), command_coordinator_(config.command),
       ball_association_tracker_(config.object_association),
@@ -105,6 +96,7 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
   bool line_reference_valid = false;
   bool allow_new_line_locomotion_action =
       input.allow_new_line_locomotion_action;
+  CruiseDecision line_cruise;
   ActionExecutionFeedback action_feedback = input.action_feedback;
   if (input.command_transport_enabled) {
     const bool pending_mission_action =
@@ -229,15 +221,19 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
         line_guide_accumulator_.Reset();
       }
 
-      const MotionCommand p2p_command =
-          line_p2p_controller_.Compute(decision_guide);
+      // 정상 LINE은 O/H direct selector가 독점한다. recovery에서는
+      // applicable=false로 두어 기존 MotionCommand/quantizer 경로를 사용한다.
+      if (line_reference_valid) {
+        line_cruise = line_p2p_controller_.Compute(decision_guide);
+      }
       const bool no_action_candidate =
-          !decision_guide.valid ||
-          IsInsideP2pDeadband(p2p_command, config_.command.p2p);
+          line_cruise.applicable &&
+          line_cruise.direction == CruiseDirection::kNone;
 
-      // 라인을 잃었거나 판단값이 모두 deadband 안이면 실행기가 ACK/DONE을
-      // 반환해야 하는 가짜 정지 action을 만들지 않는다. 정해진 시간 동안
-      // 현재 자세를 유지한 뒤 새 관측으로 다시 판단한다.
+      // 정상 LINE에서 O/H 관측이 invalid라 NONE이면 실행기가 ACK/DONE을
+      // 반환해야 하는 가짜 action을 만들지 않는다. 정해진 시간 동안 현재
+      // 자세를 유지한 뒤 새 관측으로 다시 판단한다. STRAIGHT는 NONE이 아니라
+      // STEP_FORWARD_FIVE다.
       if (line_no_action_hold_active_) {
         if (input.now_sec + 1e-9 < line_no_action_hold_end_sec_) {
           force_line_hold = true;
@@ -258,10 +254,12 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
         }
       }
 
-      output.line_command =
-          force_line_hold || no_action_candidate ? MotionCommand{}
-                                                  : p2p_command;
-      if (force_line_hold) allow_new_line_locomotion_action = false;
+      if (force_line_hold) {
+        allow_new_line_locomotion_action = false;
+        if (line_cruise.applicable) {
+          line_cruise.direction = CruiseDirection::kNone;
+        }
+      }
     }
     output.line_computed = true;
   };
@@ -376,7 +374,7 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
   output.command = command_coordinator_.Compute(
       ball_result_, hurdle_result_, goal_result_, output.line_command,
       input.delivery_feedback, input.now_sec,
-      allow_new_line_locomotion_action);
+      allow_new_line_locomotion_action, line_cruise);
   if (input.delivery_feedback.done &&
       input.delivery_feedback.action_id == ready_line_action_id_) {
     ready_line_action_id_ = 0;
@@ -559,16 +557,13 @@ MissionController::StepPerception(const PerceptionFrameInput &input) {
 }
 
 bool MissionController::UpdateLineP2pTuning(
-    const LineP2pConfig &line_p2p,
-    const P2pMotionConfig &normal_p2p) {
+    const LineP2pConfig &line_p2p) {
   if (last_command_.action_id != 0 || short_line_collection_active_ ||
       line_no_action_hold_active_) {
     return false;
   }
   config_.line_p2p = line_p2p;
-  config_.command.p2p = normal_p2p;
-  line_p2p_controller_ = LineP2pController(config_.line_p2p, config_.line);
-  command_coordinator_.UpdateNormalP2pConfig(config_.command.p2p);
+  line_p2p_controller_ = LineP2pController(config_.line_p2p);
   return true;
 }
 

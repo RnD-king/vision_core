@@ -142,10 +142,9 @@ public:
       const PerceptionFrameInput &input);
   MissionType ActiveMission() const { return active_mission_; }
   bool HasBall() const { return has_ball_; }
-  // 진행 중 action/짧은 동작 후 관측이 없을 때만 LINE P2P gain과 Normal
-  // 양자화 기준을 상태 손실 없이 교체한다.
-  bool UpdateLineP2pTuning(const LineP2pConfig &line_p2p,
-                           const P2pMotionConfig &normal_p2p);
+  // 진행 중 action/짧은 동작 후 관측이 없을 때만 LINE direct selector
+  // gain/deadband를 상태 손실 없이 교체한다.
+  bool UpdateLineP2pTuning(const LineP2pConfig &line_p2p);
   void Reset();
 
 private:

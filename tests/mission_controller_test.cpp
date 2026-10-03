@@ -175,7 +175,7 @@ void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
   assert(result.command.action_id == 501);
 }
 
-void TestShortLineActionCollectsForOneSecondAfterDone() {
+void TestNormalLineDirectIgnoresQuantizerThresholds() {
   auto config = FastConfig();
   config.enable_ball = false;
   config.enable_hurdle = false;
@@ -183,47 +183,18 @@ void TestShortLineActionCollectsForOneSecondAfterDone() {
   config.line.line_stable_window = 1;
   config.line.line_stable_min_hits = 1;
   config.command.locomotion_backend = LocomotionBackend::kP2pAction;
-  // 첫 직진을 1걸음 action으로 만들고 DONE 뒤 1초 관측을 검증한다.
+  // Normal quantizer 기준을 바꿔도 정상 LINE direct action은 변하지 않는다.
   config.command.p2p.long_forward_vx = 1.0;
-  config.line_p2p.short_post_collect_sec = 1.0;
+  config.command.p2p.curve_yaw_threshold = 100.0;
+  config.command.p2p.sharp_turn_yaw_threshold = 100.0;
   config.command.first_action_id = 600;
   MissionController controller(config);
 
   auto input = Frame(0.0);
   auto result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kStepForwardOne);
+  assert(result.command.action == MissionAction::kStepForwardFive);
   assert(result.command.action_id == 600);
-
-  input = Frame(0.1);
-  input.delivery_feedback = {600, true, false};
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.action_id == 600);
-
-  // DONE 직후에는 다음 action을 발행하지 않고 정지 관측을 시작한다.
-  input = Frame(2.0);
-  for (auto &point : input.line_centers) point.u = 60.0;
-  input.delivery_feedback = {600, true, true};
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.action_id == 0);
-
-  input = Frame(2.5);
-  for (auto &point : input.line_centers) point.u = 60.0;
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.action_id == 0);
-
-  // DONE+1초에 수집한 오른쪽 치우침이 다음 PRE-P2P 조향 의도에 반영된다.
-  // 저속에서 조향 임계값을 넘으면 1걸음 직진 대신 제자리회전을 선택한다.
-  input = Frame(3.0);
-  for (auto &point : input.line_centers) point.u = 60.0;
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action_id == 601);
-  assert(result.command.action == MissionAction::kTurnRight);
-  assert(result.command.pre_p2p_motion.wz < -0.10);
 }
 
 void TestOneShotLineDecisionGateAndSafeTuningUpdate() {
@@ -245,21 +216,20 @@ void TestOneShotLineDecisionGateAndSafeTuningUpdate() {
 
   auto line_p2p = config.line_p2p;
   line_p2p.offset_gain = 2.0;
-  assert(controller.UpdateLineP2pTuning(line_p2p, config.command.p2p));
+  assert(controller.UpdateLineP2pTuning(line_p2p));
 
   input = Frame(1.0);
   input.allow_new_line_locomotion_action = true;
   input.line_decision_guide_override = LineGuide{0.20, 0.0, 0.0, 1.0, true};
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kTurnRightAndStep);
+  assert(result.command.action == MissionAction::kStepForwardRight);
   assert(result.command.action_id == 700);
   // 실행 중인 action이 있으면 gain/기준 교체를 거절한다.
-  assert(!controller.UpdateLineP2pTuning(config.line_p2p,
-                                         config.command.p2p));
+  assert(!controller.UpdateLineP2pTuning(config.line_p2p));
 }
 
-void TestMissingLineHoldsWithoutPublishingActionForTwoSeconds() {
+void TestInvalidNormalLineGuideHoldsWithoutQuantizerFallback() {
   auto config = FastConfig();
   config.enable_ball = false;
   config.enable_hurdle = false;
@@ -272,7 +242,7 @@ void TestMissingLineHoldsWithoutPublishingActionForTwoSeconds() {
   MissionController controller(config);
 
   auto input = Frame(0.0);
-  input.line_centers.clear();
+  input.line_decision_guide_override = LineGuide{};
   auto result = controller.Step(input);
   assert(result.command.command_type == CommandType::kHold);
   assert(result.command.action == MissionAction::kNone);
@@ -280,6 +250,7 @@ void TestMissingLineHoldsWithoutPublishingActionForTwoSeconds() {
 
   // 유지 시간 중 라인이 다시 보여도 중간에 새 action을 발행하지 않는다.
   input = Frame(1.0);
+  input.line_decision_guide_override.reset();
   result = controller.Step(input);
   assert(result.command.command_type == CommandType::kHold);
   assert(result.command.action_id == 0);
@@ -299,9 +270,9 @@ int main() {
   TestHurdleEntryHasPriorityOverBall();
   TestCarryingBallAllowsOnlyGoalEntry();
   TestMissionControllerReturnsActionAndPreP2pMotionTogether();
-  TestShortLineActionCollectsForOneSecondAfterDone();
+  TestNormalLineDirectIgnoresQuantizerThresholds();
   TestOneShotLineDecisionGateAndSafeTuningUpdate();
-  TestMissingLineHoldsWithoutPublishingActionForTwoSeconds();
+  TestInvalidNormalLineGuideHoldsWithoutQuantizerFallback();
   std::cout << "mission controller tests passed\n";
   return 0;
 }

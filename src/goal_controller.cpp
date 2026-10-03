@@ -3,6 +3,8 @@
 
 #include "vision_core/goal_controller.hpp"
 
+#include "vision_core/cruise_selector.hpp"
+
 #include "vision_core/config_loader.hpp"
 
 #include <algorithm>
@@ -261,6 +263,10 @@ GoalResult GoalController::Compute(
       state_enter_sec_ = now_sec;
       result.mode = mode_;
       result.command = ComputeApproachCommand();
+      result.cruise = SelectCruiseDecision(
+          true, tracked_.visible,
+          tracked_.u_norm - config_.target_u_norm,
+          config_.approach_u_deadband);
     }
     return result;
   case GoalMode::kApproach: {
@@ -289,6 +295,10 @@ GoalResult GoalController::Compute(
       result.command = {};
       return result;
     }
+    result.cruise = SelectCruiseDecision(
+        true, tracked_.visible,
+        tracked_.u_norm - config_.target_u_norm,
+        config_.approach_u_deadband);
     return result;
   }
   case GoalMode::kRlStopping:
@@ -355,6 +365,12 @@ GoalResult GoalController::Compute(
       result.command = tracked_.visible
                            ? ComputeApproachCommand()
                            : MotionCommand{};
+      if (result.mode == GoalMode::kApproach) {
+        result.cruise = SelectCruiseDecision(
+            true, tracked_.visible,
+            tracked_.u_norm - config_.target_u_norm,
+            config_.approach_u_deadband);
+      }
       return result;
     }
     const int aligned_hits = static_cast<int>(std::count(

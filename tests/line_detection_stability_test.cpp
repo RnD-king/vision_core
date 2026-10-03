@@ -7,6 +7,7 @@
 #undef NDEBUG
 #endif
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 namespace {
@@ -112,6 +113,7 @@ void TestStraightKeepsCurveScoreNearZero() {
         points, 640, 480, false, 0.0, 0.0, config, &state);
     assert(std::abs(features.u_err_lookahead) < 1e-9);
     assert(features.guide.valid);
+    assert(features.guide.curvature_valid);
     assert(std::abs(features.guide.offset) < 1e-9);
     assert(std::abs(features.guide.heading_rad) < 1e-9);
     assert(std::abs(features.guide.curvature_rad) < 1e-9);
@@ -137,14 +139,15 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
   assert(curve_features.u_err_lookahead > 0.0);
   assert(curve_features.slope > 0.0);
   assert(curve_features.guide.valid);
+  assert(curve_features.guide.curvature_valid);
   assert(curve_features.guide.heading_rad > 0.0);
   assert(curve_features.guide.curvature_rad > 0.05);
   assert(curve_features.guide.confidence > 0.0);
 
   const auto algorithm = vision_core::LoadDefaultAlgorithmConfig();
-  const vision_core::LineP2pController p2p(algorithm.line_p2p,
-                                            algorithm.line);
-  assert(p2p.Compute(curve_features.guide).wz < 0.0);
+  const vision_core::LineP2pController p2p(algorithm.line_p2p);
+  assert(p2p.Compute(curve_features.guide).direction ==
+         vision_core::CruiseDirection::kRight);
 
   std::vector<vision_core::Point2> left_curve = curve_points;
   for (auto &point : left_curve) point.u = 640.0 - point.u;
@@ -153,8 +156,10 @@ void TestCurveUsesStableAdaptiveLookaheadAndSparseFallback() {
   assert(left_features.u_err_lookahead < 0.0);
   assert(left_features.slope < 0.0);
   assert(left_features.guide.heading_rad < 0.0);
+  assert(left_features.guide.curvature_valid);
   assert(left_features.guide.curvature_rad < -0.05);
-  assert(p2p.Compute(left_features.guide).wz > 0.0);
+  assert(p2p.Compute(left_features.guide).direction ==
+         vision_core::CruiseDirection::kLeft);
 
   const double before_sparse = state.filtered_curve_score;
   const std::vector<vision_core::Point2> sparse_points{
@@ -187,6 +192,21 @@ void TestGuideOffsetAndLocalFitConfidence() {
       scattered, 640, 480, false, 0.0, 0.0, config);
   assert(noisy.guide.valid);
   assert(noisy.guide.confidence < straight.guide.confidence);
+
+  // 먼 점들의 v 분산이 없어 curvature fit이 실패해도 가까운 O/H와 그
+  // confidence는 유효해야 한다.
+  const std::vector<vision_core::Point2> no_far_fit{
+      {300.0, 420.0}, {305.0, 350.0}, {310.0, 280.0},
+      {315.0, 100.0}, {320.0, 100.0}, {330.0, 100.0},
+      {340.0, 100.0},
+  };
+  const auto near_only = vision_core::ComputeLineFeatures(
+      no_far_fit, 640, 480, false, 0.0, 0.0, config);
+  assert(near_only.guide.valid);
+  assert(std::isfinite(near_only.guide.offset));
+  assert(std::isfinite(near_only.guide.heading_rad));
+  assert(near_only.guide.confidence > 0.0);
+  assert(!near_only.guide.curvature_valid);
 }
 
 } // namespace

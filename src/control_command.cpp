@@ -1,6 +1,7 @@
 #include "vision_core/control_command.hpp"
 
 #include "vision_core/config_loader.hpp"
+#include "vision_core/cruise_selector.hpp"
 
 #include <cmath>
 #include <limits>
@@ -144,6 +145,17 @@ MotionCommand CommandForMission(MissionType mission, const BallResult &ball,
   }
 }
 
+CruiseDecision CruiseForMission(MissionType mission, const BallResult &ball,
+                                const GoalResult &goal,
+                                const CruiseDecision &line_cruise) {
+  switch (mission) {
+  case MissionType::kLine: return line_cruise;
+  case MissionType::kBall: return ball.cruise;
+  case MissionType::kGoal: return goal.cruise;
+  default: return {};
+  }
+}
+
 int MissionPhase(MissionType mission, const BallResult &ball,
                  const HurdleResult &hurdle, const GoalResult &goal) {
   switch (mission) {
@@ -265,16 +277,19 @@ ControlCommand ControlCommandCoordinator::BeginQueuedLineAction(
 ControlCommand ControlCommandCoordinator::Compute(
     const BallResult &ball_result, const HurdleResult &hurdle_result,
     const GoalResult &goal_result, const MotionCommand &line_candidate,
-    const CommandDeliveryFeedback &feedback) {
+    const CommandDeliveryFeedback &feedback,
+    const CruiseDecision &line_cruise) {
   return Compute(ball_result, hurdle_result, goal_result, line_candidate,
-                 feedback, std::numeric_limits<double>::quiet_NaN());
+                 feedback, std::numeric_limits<double>::quiet_NaN(), true,
+                 line_cruise);
 }
 
 ControlCommand ControlCommandCoordinator::Compute(
     const BallResult &ball_result, const HurdleResult &hurdle_result,
     const GoalResult &goal_result, const MotionCommand &line_candidate,
     const CommandDeliveryFeedback &feedback, double now_sec,
-    bool allow_new_line_locomotion_action) {
+    bool allow_new_line_locomotion_action,
+    const CruiseDecision &line_cruise) {
   compute_time_valid_ = std::isfinite(now_sec);
   compute_now_sec_ = compute_time_valid_ ? now_sec : 0.0;
 
@@ -364,6 +379,8 @@ ControlCommand ControlCommandCoordinator::Compute(
 
   const MissionAction requested = RequestedAction(
       command.mission, ball_result, hurdle_result, goal_result);
+  const CruiseDecision cruise = CruiseForMission(
+      command.mission, ball_result, goal_result, line_cruise);
 
   if (action_ack_timed_out_) {
     // 늦은 ACK 뒤 동일 동작을 새 ID로 다시 실행하는 위험을 피하기 위해 자동
@@ -392,10 +409,16 @@ ControlCommand ControlCommandCoordinator::Compute(
         command.mission == MissionType::kLine &&
         pending_action_category_ == ActionCategory::kLocomotion &&
         IsLongLineLocomotionAction(pending_action_)) {
-      const LocomotionAction next = p2p_quantizer_.Quantize(
-          command.pre_p2p_motion, MissionType::kLine, 0);
-      if (next != LocomotionAction::kNone) {
-        return BeginQueuedLineAction(command, ToActionCode(next));
+      MissionAction next = MissionAction::kNone;
+      if (cruise.applicable) {
+        next = CruiseAction(cruise.direction);
+      } else {
+        const LocomotionAction quantized = p2p_quantizer_.Quantize(
+            command.pre_p2p_motion, MissionType::kLine, 0);
+        next = ToActionCode(quantized);
+      }
+      if (next != MissionAction::kNone) {
+        return BeginQueuedLineAction(command, next);
       }
     }
     if (queued_action_id_ != 0) {
@@ -467,19 +490,32 @@ ControlCommand ControlCommandCoordinator::Compute(
       command.pre_p2p_motion = {};
       return command;
     }
-    const LocomotionAction locomotion =
-        p2p_quantizer_.Quantize(command.velocity, command.mission,
-                                command.mission_phase);
     command.velocity = {};
-    if (locomotion == LocomotionAction::kNone) {
-      command.command_type = CommandType::kHold;
+    if (cruise.applicable) {
+      const MissionAction cruise_action = CruiseAction(cruise.direction);
+      if (cruise_action == MissionAction::kNone) {
+        // 정상 direct phase의 invalid 관측은 HOLD다. legacy command가
+        // 남아 있어도 quantizer로 fall through하지 않는다.
+        command.command_type = CommandType::kHold;
+      } else {
+        return BeginAction(command, cruise_action,
+                           ActionCategory::kLocomotion,
+                           ExecutionKindForLocomotionAction(cruise_action));
+      }
     } else {
-      return BeginAction(command, ToActionCode(locomotion),
-                         ActionCategory::kLocomotion,
-                         ExecutionKindForLocomotionAction(
-                             ToActionCode(locomotion)),
-                         LocomotionTargetYawRad(ToActionCode(locomotion),
-                                                command.pre_p2p_motion));
+      const LocomotionAction locomotion =
+          p2p_quantizer_.Quantize(command.pre_p2p_motion, command.mission,
+                                  command.mission_phase);
+      if (locomotion == LocomotionAction::kNone) {
+        command.command_type = CommandType::kHold;
+      } else {
+        return BeginAction(command, ToActionCode(locomotion),
+                           ActionCategory::kLocomotion,
+                           ExecutionKindForLocomotionAction(
+                               ToActionCode(locomotion)),
+                           LocomotionTargetYawRad(ToActionCode(locomotion),
+                                                  command.pre_p2p_motion));
+      }
     }
   } else {
     command.command_type = CommandType::kVelocity;
@@ -544,8 +580,8 @@ ControlCommand 결정 규칙 (ROS 통합 경로)
 - mission_phase: 해당 controller의 mode enum 숫자를 그대로 넣는다.
 - control_phase: 일반 미션(0), RL 정지 중(1), ACK 대기(2), DONE 대기(3),
     예약 ACK 대기(4), 예약 action 시작 대기(5), ACK timeout 정지(6)다.
-- pre_p2p_motion: P2P action으로 양자화하기 전 vx/vy/wz 의도다. pending 중에도
-    해당 action_id가 처음 선택됐을 때의 값을 유지한다.
+- pre_p2p_motion: velocity 호환 실행기가 사용할 기존 vx/vy/wz 의도다. direct
+    cruise action에서도 병렬 보존하며 pending 중에는 최초 값을 유지한다.
 - velocity     : VELOCITY일 때 사용할 vx/vy/wz다. ACTION/HOLD에서는 0/0/0이다.
 - action       : ACTION/HOLD에서 실행 또는 유지 중인 공통 wire action 코드다.
 - action_category: controller가 요청한 MISSION과 P2P가 만든 LOCOMOTION을
@@ -622,9 +658,10 @@ DONE 뒤 같은 요청에도 새 action_id를 발급한다.
 P2P backend
 -----------
 인자 없는 coordinator는 공통 algorithm YAML의 backend 설정을 읽는다.
-kP2pAction에서는 명시적인 controller action_request를 먼저 처리한 뒤, 요청이
-없을 때만 최종 velocity를 P2pMotionQuantizer로 보낸다. 정지/RL_STOPPING은 새
-보행 ACTION을 만들지 않는 HOLD가 되고, 0이 아닌 속도는 LOCOMOTION ACTION이 된다.
+kP2pAction에서는 명시적인 controller action_request를 먼저 처리한다. 정상
+LINE/BALL/GOAL approach는 direct CruiseDecision을 기존 세 긴 보행으로 바꾸고,
+direct가 적용되지 않는 recovery/fine/특수 상태만 MotionCommand를
+P2pMotionQuantizer로 보낸다. applicable direct의 NONE은 fallback 없이 HOLD다.
 실행 중 action은 하나이며 긴 라인 보행에서만 다음 locomotion action 하나를
 미리 예약할 수 있다. 미션/보행 동작은 동시에 실행되지 않는다.
 ROS는 action을 실행하고, MuJoCo는 kVelocityCompatible일 때 pre_p2p_motion을

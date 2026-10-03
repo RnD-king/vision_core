@@ -71,13 +71,14 @@ Jandi MJLab 어댑터는 실제 경기장 좌표를 line/object bbox와 RGB-D �
 `intrinsics.cx`를 우선하며, 직접 `Step()`을 호출할 때만 YAML 값을 fallback으로
 사용한다.
 
-velocity backend는 기존 연속속도 계산을 그대로 사용한다. P2P backend는
-`offset_gain`, `heading_gain`, `curvature_gain` 세 값만으로 LineGuide를
-PRE-P2P 속도 의도로 바꾼다. 5걸음·곡선·회전 후 직진 계열 action은
+velocity backend는 기존 연속속도 계산을 그대로 사용한다. P2P backend의
+정상 LINE은 `offset_gain * offset + heading_gain * heading` score와
+`steering_deadband`로 기존 LEFT/FIVE/RIGHT action을 직접 고른다. curvature는
+진단값으로만 남고 정상 steering에는 사용하지 않는다. 긴 LINE action은
 ACK부터 DONE까지 관측한
 특징 중 실제 실행시간 후반 50%를 끝에 가까울수록 크게 선형 가중 평균하여
-다음 action을 고른다. 1걸음과 제자리회전처럼 짧은 action은 DONE 시점의
-최신 프레임을 사용한다.
+READY에서 다음 direct action을 예약한다. recovery/fine/특수 동작은 기존
+MotionCommand와 P2P quantizer 경로를 유지한다.
 
 실행 시 우선순위는 `공통 YAML < ROS params-file < ROS CLI -p`다. 따라서
 공통 값을 바꿀 때는 YAML을 수정하고 core를 다시 install하면 되며,
@@ -232,22 +233,26 @@ vision_core/
 `vision_algorithm.yaml`을 읽으며, 현재 공통 기본값은 `p2p`다. 명시적인
 `ControlCommandConfig`를 넘기는 호출자는 그 설정을 그대로 사용한다.
 
-`kP2pAction`을 선택하면 각 controller와 MissionController의 속도 계산은 그대로
-두고, 최종 선택된 `MotionCommand`만 `P2pMotionQuantizer`를 통과한다.
+`kP2pAction`을 선택하면 정상 LINE/BALL/GOAL approach는 화면 오차의 direct
+`CruiseDecision`으로 LEFT/FIVE/RIGHT를 고른다. 병렬 계산한 기존
+`MotionCommand`는 velocity/simulator 호환용으로 보존하지만 action 선택에는
+사용하지 않는다. recovery/fine/특수 상태만 기존 quantizer를 사용한다.
 
 ```text
 controller의 mission action_request 존재
     -> ActionCategory::kMission (항상 우선)
+정상 LINE/BALL/GOAL direct cruise
+    -> 기존 STEP_FORWARD_LEFT/FIVE/RIGHT
 그 외의 최종 vx/vy/wz
     -> kVelocity backend: VELOCITY
     -> kP2pAction backend: ActionCategory::kLocomotion
 ```
 
 기본 P2P primitive는 1/5걸음 직진, 좌·우 곡선 전진, 후진/횡이동,
-좌·우 제자리 회전, 제자리회전 후 직진이다. quantizer는 최종 `mission + phase`로
-Normal/Fine/Recovery 프로필을 먼저 고르고 각 프로필의 임계값으로 속도를
-양자화한다. LINE과 일반 접근은 Normal, 근접 접근·미세조정은 Fine,
-탐색·유실복구·라인 재획득은 Recovery다. Fine/Recovery 기본값은 매 1걸음 뒤
+좌·우 제자리 회전, 제자리회전 후 직진이다. quantizer fallback은 최종
+`mission + phase`로 Normal/Fine/Recovery 프로필을 먼저 고른다. 근접 접근·
+미세조정은 Fine, 탐색·유실복구·라인 재획득은 Recovery다. Fine/Recovery는
+매 1걸음 뒤
 다시 관측하도록 긴 5걸음 선택 임계값을 높여 두었다. 실제 P2P 모션 이동량에
 맞춰 `P2pMotionConfig` 또는 ROS의 `p2p_fine_*`, `p2p_recovery_*` 파라미터를
 조정한다. 유한하지 않은 속도나 모든 축이 deadband 안인 명령은 새 액션을

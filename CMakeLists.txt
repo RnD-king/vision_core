@@ -14,6 +14,7 @@ find_package(yaml-cpp REQUIRED)
 add_library(shared_vision_core SHARED
   src/config_loader.cpp
   src/coordinate_rectifier.cpp
+  src/cruise_selector.cpp
   src/line_detection_extractor.cpp
   src/line_feature_extractor.cpp
   src/line_p2p_controller.cpp

@@ -1,6 +1,6 @@
 // 처리 순서: [점선 분기 2단계] coordinate_rectifier 뒤에 호출한다.
 // 역할: 보정된 점선 중심점들로부터 기존 연속속도 특징과 P2P용 compact
-// LineGuide(offset/heading/curvature/confidence)를 함께 만든다.
+// LineGuide의 O/H validity/confidence와 curvature validity를 분리해 만든다.
 // 다음 단계: 기존 Features 값은 line_velocity_controller.cpp로 가고,
 // LineGuide는 모션 구간 누적 및 P2P action 선택에 사용한다.
 
@@ -93,9 +93,7 @@ LineGuide ComputeLineGuide(const std::vector<Point2> &points, double cx,
       points.size());
   const std::size_t far_begin = points.size() - local_count;
   const LineFit near_fit = FitLine(points, 0, local_count);
-  const LineFit far_fit = FitLine(points, far_begin, points.size());
-  if (!near_fit.valid || !far_fit.valid)
-    return guide;
+  if (!near_fit.valid) return guide;
 
   const double near_reference_v = MeanV(points, 0, local_count);
   const double near_reference_u = near_fit.a * near_reference_v + near_fit.b;
@@ -103,26 +101,37 @@ LineGuide ComputeLineGuide(const std::vector<Point2> &points, double cx,
   // FitLine의 a=du/dv이고 영상에서 진행 방향은 v 감소 방향이다.
   // 따라서 -atan(a)가 진행 방향 기준 image-right(+) 각도다.
   guide.heading_rad = -std::atan(near_fit.a);
-  const double far_heading_rad = -std::atan(far_fit.a);
-  guide.curvature_rad = WrapAngle(far_heading_rad - guide.heading_rad);
+  guide.valid = std::isfinite(guide.offset) &&
+                std::isfinite(guide.heading_rad);
+  if (!guide.valid) return guide;
 
-  const int minimum_points = std::max(3, cfg.curve_min_points);
+  const LineFit far_fit = FitLine(points, far_begin, points.size());
+  if (far_fit.valid) {
+    const double far_heading_rad = -std::atan(far_fit.a);
+    const double curvature = WrapAngle(far_heading_rad - guide.heading_rad);
+    if (std::isfinite(curvature)) {
+      guide.curvature_rad = curvature;
+      guide.curvature_valid = true;
+    }
+  }
+
+  // confidence는 정상 P2P 제어에 쓰는 가까운 O/H fit 품질이다. 먼 점군
+  // curvature fit의 성공/실패나 잔차와 결합하지 않는다.
+  const int desired_near_points = std::max(3, cfg.curve_local_fit_points);
   const double point_confidence =
-      Clamp(static_cast<double>(points.size() - 1) /
-                static_cast<double>(std::max(1, minimum_points - 1)),
+      Clamp(static_cast<double>(local_count) /
+                static_cast<double>(desired_near_points),
             0.0, 1.0);
-  const double v_span = points.front().v - points.back().v;
+  const double v_span = points.front().v - points[local_count - 1].v;
   const double span_confidence =
       Clamp(v_span / std::max(1.0, cfg.curve_min_v_span_px), 0.0, 1.0);
   const double near_rmse = FitRmsePx(points, 0, local_count, near_fit);
-  const double far_rmse = FitRmsePx(points, far_begin, points.size(), far_fit);
   const double fit_confidence =
-      1.0 - Clamp(std::max(near_rmse, far_rmse) /
+      1.0 - Clamp(near_rmse /
                       std::max(1.0, cfg.guide_fit_rmse_full_scale_px),
                   0.0, 1.0);
   guide.confidence =
       Clamp(point_confidence * span_confidence * fit_confidence, 0.0, 1.0);
-  guide.valid = true;
   return guide;
 }
 } // namespace
