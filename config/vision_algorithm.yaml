@@ -76,8 +76,6 @@ vision_algorithm:
     throwing_range_m: 0.40
     position_tolerance_m: 0.08
     fine_settle_duration_sec: 0.60
-    fine_adjust_window: 10
-    fine_adjust_min_hits: 7
     shoot_yaw_limit_deg: 30.0
 
   line_detection:

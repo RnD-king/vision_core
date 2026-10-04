@@ -1,173 +1,84 @@
 # Shared Vision Core Agent Guide
 
-## Project role
+## Project role and boundary
 
-`vision_core` is the shared ROS-independent C++ perception, mission-control, and command-generation library.
+`vision_core` is the ROS-independent C++ perception, mission-control, and
+direct-action library used by the real ROS2 `vision` adapter. It is a library,
+not a standalone ROS node.
 
-It is used by multiple execution environments, including:
+Do not introduce ROS2, sensor message, TensorRT, CUDA, camera-driver, or runtime
+transport dependencies here. Avoid OpenCV unless an explicit architecture
+decision requires it. Hardware and ROS adaptation belong in `vision`.
 
-- the real ROS2 `vision` package
-- simulator/Python callers through the C API
+## Configuration ownership
 
-It is a library, not a standalone ROS node.
+`config/vision_algorithm.yaml` is the single source of shared algorithm
+defaults. Do not duplicate them in the ROS adapter. Missing, non-finite, or
+semantically invalid required configuration must fail fast instead of being
+silently clamped into a different behavior.
 
-## Hard dependency boundary
+## P2P-only mission architecture
 
-Keep this library independent of runtime-specific robotics middleware and inference infrastructure.
+The active control pipeline is:
 
-Do not introduce dependencies on:
+perception → `MissionController` → direct `MissionAction` →
+`ControlCommandCoordinator` → ACK/READY/DONE → P2P executor
 
-- ROS2 / rclcpp
-- sensor_msgs
-- geometry_msgs
-- cv_bridge
-- TensorRT
-- CUDA
-- camera drivers
+There is no active continuous-velocity backend, `MotionCommand`,
+`P2pMotionQuantizer`, MuJoCo velocity compatibility, or C API.
 
-Avoid adding OpenCV unless an explicit architectural decision requires it; the current core API is intentionally independent of the camera/inference stack.
+`MissionController` owns mission priority, mission locking, controller reset
+sequencing, object-mission transitions, LINE recovery, and completion routing.
+Individual controllers own their mission-specific FSM behavior. External
+callers provide observations and executor feedback and consume the returned
+`ControlCommand`; they must not reproduce mission decisions independently.
 
-Hardware and transport adaptation belongs in `vision`.
+## Action and camera lifecycle
 
-## Single source of algorithm truth
+Preserve the distinction between locomotion actions, mission/discrete actions,
+stationary HOLD, and camera requests. Existing action numbers, `action_id`, and
+ACK/READY/DONE behavior are public execution contracts.
 
-Shared algorithm configuration lives in:
+READY does not cancel the current action. A long LINE action may reserve at
+most one direct LINE action with a new ID. The executor must ACK that ID only
+after actually storing it and must start it exactly once after current DONE.
 
-`config/vision_algorithm.yaml`
+Camera triggers are latched while locomotion runs. Camera commands are emitted
+only after locomotion DONE, and new locomotion stays on HOLD until the camera is
+settled.
 
-Do not duplicate canonical numerical algorithm defaults in the ROS adapter or simulator.
+## LINE behavior
 
-Configuration structs transport values; the YAML is the canonical shared configuration source.
+Normal LINE steering uses only the near-fit offset/heading score and directly
+selects `STEP_FORWARD_LEFT`, `STEP_FORWARD_FIVE`, or `STEP_FORWARD_RIGHT`.
+Curvature is diagnostic-only, has independent validity/accumulation, and must
+not affect steering, mission transitions, or recovery.
 
-If required configuration is missing or invalid, preserve the existing fail-fast behavior rather than silently inventing fallback parameters.
+Invalid direct observations produce HOLD, never a legacy fallback. LINE
+failure uses stationary observation, bounded directional recovery/no-evidence
+retries, and terminal FINAL HOLD until explicit Reset. Unstable observations
+must not update directional memory.
 
-## Mission architecture
+## Determinism and tests
 
-`MissionController` is the central mission-state-machine entry point.
+Keep core behavior deterministic for identical configuration, observations,
+state, and execution feedback. Do not add hidden ROS state, wall-clock access,
+global runtime state, or hardware access.
 
-Callers should provide observations and execution feedback, then consume the returned `ControlCommand`.
-
-External callers must not independently perform:
-
-- mission-priority selection
-- mission locking/unlocking
-- controller reset sequencing
-- pickup/goal/hurdle state transitions
-- action completion routing
-
-Individual controllers own their mission-specific behavior.
-
-`MissionController` owns cross-mission coordination.
-
-## Command lifecycle
-
-Preserve the distinction between:
-
-- continuous velocity commands
-- locomotion/P2P actions
-- mission/discrete actions
-- stationary actions
-- camera requests
-
-ACK/DONE and action-ID behavior are part of the public control contract.
-
-Do not change action lifecycle semantics as a side effect of unrelated controller work.
-
-## P2P behavior
-
-P2P quantization occurs after continuous mission/control logic has produced the selected velocity command.
-
-Do not move mission logic into `P2pMotionQuantizer`.
-
-Preserve access to the pre-quantization motion command for simulator/velocity-compatible consumers.
-
-## C / C++ API compatibility
-
-`c_api` is consumed by simulator/Python clients.
-
-Treat exported C API structures and functions as compatibility-sensitive interfaces.
-
-Before changing an existing C API:
-
-1. inspect current users,
-2. determine whether ABI/API compatibility can be preserved,
-3. prefer additive/versioned interfaces where practical.
-
-Do not casually rename or remove existing exported functions or fields.
-
-## Determinism
-
-Keep core behavior deterministic for identical:
-
-- configuration
-- observations
-- controller state
-- execution feedback
-
-Do not introduce hidden ROS state, wall-clock dependencies, global runtime state, or hardware access into core decision logic.
-
-## Tests
-
-The tests directory is part of the product contract, not disposable generated code.
-
-Current test areas include:
-
-- config loading
-- ball controller
-- hurdle controller
-- goal controller
-- line detection stability
-- control-command lifecycle
-- P2P motion quantization
-- mission coordination
-- perception pipeline
-- object association tracking
-
-Behavior changes should update or add focused tests.
-
-Do not delete or weaken a test merely because a new implementation fails it.
-
-## Verification
+Tests are part of the product contract. Add focused coverage for behavior
+changes; do not delete or weaken tests merely because an implementation fails.
 
 Standard verification:
 
-`cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
-
-`cmake --build build -j`
-
-`ctest --test-dir build --output-on-failure`
-
-For changes to shared behavior, run the full CTest suite before claiming completion.
-
-When installation behavior changes, also verify:
-
-`cmake --install build --prefix install`
-
-## Repository ownership
-
-Put code here when the behavior must be shared between real and simulated environments.
-
-Put code in `vision` when it concerns:
-
-- ROS topics
-- camera input
-- image transport
-- CUDA preprocessing
-- TensorRT
-- visualization
-- hardware/runtime adaptation
-
-When uncertain, preserve the core's ROS-independent boundary.
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix install
+```
 
 ## Scope discipline
 
-For a targeted task:
-
-1. inspect the relevant API and implementation,
-2. inspect its focused tests,
-3. understand public callers,
-4. make the smallest coherent change,
-5. run the affected tests,
-6. run the full test suite when shared behavior changed.
-
-Avoid unrelated refactors unless explicitly requested.
+Inspect the relevant implementation, tests, and public callers; make the
+smallest coherent change; then run focused and full verification. Preserve the
+ROS-independent boundary and avoid unrelated refactors.

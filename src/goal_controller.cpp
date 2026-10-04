@@ -193,28 +193,30 @@ bool GoalController::PoseReadyForFineAdjust() const {
          hits >= std::max(1, config_.stable_min_hits);
 }
 
-double GoalController::ComputeShootYawRad() const {
-  const double rim_x = tracked_pose_.x_m +
-      config_.hoop_radius_m * std::sin(tracked_pose_.yaw_rad);
-  const double rim_z = tracked_pose_.z_m -
-      config_.hoop_radius_m * std::cos(tracked_pose_.yaw_rad);
+double GoalController::ComputeShootYawRad(double x_m, double z_m,
+                                         double yaw_rad) const {
+  const double rim_x = x_m + config_.hoop_radius_m * std::sin(yaw_rad);
+  const double rim_z = z_m - config_.hoop_radius_m * std::cos(yaw_rad);
   if (!std::isfinite(rim_x) || !std::isfinite(rim_z) ||
       std::hypot(rim_x, rim_z) <= kEpsilon) return 0.0;
   return Wrap(-std::atan2(rim_x, rim_z));
 }
 
-ActionRequest GoalController::FineAction() const {
-  if (!tracked_pose_.visible) return {};
-  const double rim_x = tracked_pose_.x_m +
-      config_.hoop_radius_m * std::sin(tracked_pose_.yaw_rad);
-  const double rim_z = tracked_pose_.z_m -
-      config_.hoop_radius_m * std::cos(tracked_pose_.yaw_rad);
+ActionRequest GoalController::FineAction(
+    const GoalPoseObservation &pose) const {
+  if (!pose.valid || !std::isfinite(pose.x_m) || !std::isfinite(pose.z_m) ||
+      pose.z_m <= 0.0 || !std::isfinite(pose.yaw_rad)) return {};
+  const double rim_x = pose.x_m +
+      config_.hoop_radius_m * std::sin(pose.yaw_rad);
+  const double rim_z = pose.z_m -
+      config_.hoop_radius_m * std::cos(pose.yaw_rad);
   const double error = std::hypot(rim_x, rim_z) - config_.throwing_range_m;
   if (error > config_.position_tolerance_m)
     return Locomotion(MissionAction::kStepForwardHalf);
   if (error < -config_.position_tolerance_m)
     return Locomotion(MissionAction::kStepBack);
-  const double yaw_deg = ComputeShootYawRad() * 180.0 / kPi;
+  const double yaw_deg =
+      ComputeShootYawRad(pose.x_m, pose.z_m, pose.yaw_rad) * 180.0 / kPi;
   if (std::abs(yaw_deg) <= config_.shoot_yaw_limit_deg) {
     const double clamped = Clamp(yaw_deg, -180.0, 180.0);
     return Mission(MissionAction::kShoot,
@@ -258,7 +260,9 @@ GoalResult GoalController::Compute(
   result.tracked = tracked_;
   result.pose = tracked_pose_;
   result.shoot_yaw_rad = tracked_pose_.visible
-                             ? ComputeShootYawRad()
+                             ? ComputeShootYawRad(tracked_pose_.x_m,
+                                                  tracked_pose_.z_m,
+                                                  tracked_pose_.yaw_rad)
                              : shoot_yaw_rad_;
   switch (mode_) {
   case GoalMode::kLineFollow:
@@ -326,9 +330,12 @@ GoalResult GoalController::Compute(
       fine_trigger_latched_ = false;
       return result;
     }
-    result.action = FineAction();
+    // Fine locomotion이 끝나고 settle된 뒤 현재 frame에서 새로 계산된 raw
+    // RGB-D pose만 사용한다. motion 중 누적된 smoothing 이력은 다음 fine
+    // action의 geometry에 섞지 않는다.
+    result.action = FineAction(pose);
     if (result.action.action == MissionAction::kShoot) {
-      shoot_yaw_rad_ = ComputeShootYawRad();
+      shoot_yaw_rad_ = ComputeShootYawRad(pose.x_m, pose.z_m, pose.yaw_rad);
       mode_ = GoalMode::kShoot;
       result.mode = mode_;
       result.shoot_yaw_rad = shoot_yaw_rad_;

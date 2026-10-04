@@ -31,7 +31,8 @@ void LineGuideAccumulator::Begin(std::uint64_t action_id, double now_sec) {
 
 void LineGuideAccumulator::Add(std::uint64_t action_id, double now_sec,
                                const LineGuide &guide) {
-  if (!ActiveFor(action_id) || !guide.valid || !std::isfinite(now_sec)) return;
+  if (!ActiveFor(action_id) || !guide.valid || !std::isfinite(now_sec) ||
+      !std::isfinite(guide.offset) || !std::isfinite(guide.heading_rad)) return;
   samples_.push_back({now_sec, guide});
 }
 

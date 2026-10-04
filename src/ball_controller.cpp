@@ -228,6 +228,7 @@ BallResult BallController::Compute(
     result.action = FineAction();
     if (result.action.action == MissionAction::kPickBall) {
       pickup_attempt_count_ = 1;
+      result.pickup_attempt_count = pickup_attempt_count_;
       mode_ = BallMode::kPickupBall;
       result.mode = mode_;
     }
@@ -260,11 +261,13 @@ BallResult BallController::Compute(
     } else if (tracked_.stable && tracked_.visible) {
       if (pickup_attempt_count_ < std::max(1, config_.pickup_max_attempts)) {
         ++pickup_attempt_count_;
+        result.pickup_attempt_count = pickup_attempt_count_;
         mode_ = BallMode::kPickupBall;
         result.mode = mode_;
         result.action = Mission(MissionAction::kPickBall);
       } else {
         pickup_failed_ = true;
+        result.pickup_failed = true;
         mode_ = BallMode::kStandUpAfterPickup;
         result.mode = mode_;
         result.action = Mission(MissionAction::kDefaultPosition);

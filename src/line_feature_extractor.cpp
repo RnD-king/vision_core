@@ -102,7 +102,13 @@ LineGuide ComputeLineGuide(const std::vector<Point2> &points, double cx,
                 std::isfinite(guide.heading_rad);
   if (!guide.valid) return guide;
 
-  const LineFit far_fit = FitLine(points, far_begin, points.size());
+  const double full_v_span = points.front().v - points.back().v;
+  const bool curvature_geometry_valid =
+      static_cast<int>(points.size()) >= cfg.curve_min_points &&
+      full_v_span >= cfg.curve_min_v_span_px;
+  const LineFit far_fit = curvature_geometry_valid
+                              ? FitLine(points, far_begin, points.size())
+                              : LineFit{};
   if (far_fit.valid) {
     const double far_heading_rad = -std::atan(far_fit.a);
     const double curvature = WrapAngle(far_heading_rad - guide.heading_rad);

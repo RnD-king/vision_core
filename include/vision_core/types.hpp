@@ -102,7 +102,7 @@ enum class MissionType {
 
 enum class MissionAction {
   kNone = 0,
-  // ROS ActionCommand.msg와 C API가 공유하는 단일 action 번호 규약.
+  // ROS ActionCommand.msg와 공유하는 단일 action 번호 규약.
   kDefaultPosition = 1,
   kDefaultPoseMode = 2,
   kStepForwardHalf = 3,

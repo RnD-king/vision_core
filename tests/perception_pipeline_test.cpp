@@ -1,5 +1,8 @@
 #include "vision_core/config_loader.hpp"
 #include "vision_core/mission_controller.hpp"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 using namespace vision_core;
 int main() {

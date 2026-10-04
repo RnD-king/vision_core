@@ -146,6 +146,8 @@ ActionRequest MissionController::ComputeLineAction(
         line_direction_evidence_ = DirectionEvidence::kLeft;
       else if (d.direction == CruiseDirection::kRight)
         line_direction_evidence_ = DirectionEvidence::kRight;
+      else if (d.direction == CruiseDirection::kStraight)
+        line_direction_evidence_ = DirectionEvidence::kNone;
       return CruiseAction(*observed, true);
     }
     if (line_direction_evidence_ == DirectionEvidence::kNone) {
@@ -180,6 +182,8 @@ ActionRequest MissionController::ComputeLineAction(
     line_direction_evidence_ = DirectionEvidence::kLeft;
   else if (d.direction == CruiseDirection::kRight)
     line_direction_evidence_ = DirectionEvidence::kRight;
+  else if (d.direction == CruiseDirection::kStraight)
+    line_direction_evidence_ = DirectionEvidence::kNone;
   return CruiseAction(guide, true);
 }
 
@@ -253,9 +257,16 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
     const bool feedback = pending && matching_feedback;
     const bool done = feedback && input.delivery_feedback.done;
     const bool active = pending && !done;
+    // 첫 current action은 실제 ACK를 받은 시점부터 실행 관측을 모은다.
+    // queued action의 선행 ACK는 저장 완료만 뜻하므로 queued_wait 동안은
+    // 시작하지 않고, current DONE 뒤 pending으로 승격된 다음 frame에 시작한다.
+    const bool execution_started =
+        last_command_.control_phase == ControlPhase::kWaitingActionDone ||
+        (feedback && input.delivery_feedback.acknowledged);
     LineGuide decision = input.line_decision_guide_override
         ? *input.line_decision_guide_override : output.line_features.guide;
-    if (pending && !queued_wait && IsLongLineAction(last_command_.action)) {
+    if (pending && !queued_wait && execution_started &&
+        IsLongLineAction(last_command_.action)) {
       if (!line_guide_accumulator_.ActiveFor(last_command_.action_id) &&
           ready_line_action_id_ != last_command_.action_id)
         line_guide_accumulator_.Begin(last_command_.action_id, input.now_sec);
@@ -304,6 +315,9 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
   switch (active_mission_) {
   case MissionType::kLine:
     compute_line(); ball_result_ = {}; hurdle_result_ = {}; goal_result_ = {};
+    // FINAL HOLD는 명시적 Reset 전까지 완전한 terminal 상태다. 라인 action뿐
+    // 아니라 새로운 object mission 진입도 허용하지 않는다.
+    if (line_state_ == LineState::kFinalHold) break;
     if (has_ball_) {
       if (config_.enable_goal) {
         BallResult carrying; carrying.has_ball = true;

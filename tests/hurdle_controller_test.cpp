@@ -1,4 +1,7 @@
 #include "vision_core/hurdle_controller.hpp"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 using namespace vision_core;
 static ObjectTarget H(double v) {

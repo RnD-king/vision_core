@@ -1,4 +1,7 @@
 #include "vision_core/ball_controller.hpp"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 
 using namespace vision_core;
@@ -25,8 +28,18 @@ int main() {
   r = controller.Compute(Ball(0.5, 0.8), 100, 100, 0.2, {}, done);
   assert(r.camera_request == CameraRequest::kDown);
   CameraFeedback down{CameraMode::kDown, true};
-  r = controller.Compute(Ball(0.4, 0.7), 100, 100, 0.3, down, {});
-  r = controller.Compute(Ball(0.4, 0.7), 100, 100, 0.4, down, {});
+  r = controller.Compute(Ball(0.4, 0.6), 100, 100, 0.3, down, {});
+  r = controller.Compute(Ball(0.4, 0.6), 100, 100, 0.4, down, {});
+  // u와 v가 모두 틀려도 lateral을 먼저 보정한다.
   assert(r.action.action == MissionAction::kLeftSideStep);
+  r = controller.Compute(Ball(0.5, 0.6), 100, 100, 0.5, down, {});
+  assert(r.action.action == MissionAction::kStepForwardHalf);
+  r = controller.Compute(Ball(0.5, 0.8), 100, 100, 0.6, down, {});
+  assert(r.action.action == MissionAction::kStepBack);
+  r = controller.Compute(Ball(0.5, 0.7), 100, 100, 0.7, down, {});
+  assert(r.action.action == MissionAction::kPickBall);
+  assert(r.pickup_attempt_count == 1);
+  r = controller.Compute(Ball(0.5, 0.7), 100, 100, 0.8, down, done);
+  assert(r.action.action == MissionAction::kRecatch);
   return 0;
 }

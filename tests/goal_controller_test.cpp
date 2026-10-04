@@ -1,4 +1,7 @@
 #include "vision_core/goal_controller.hpp"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <cmath>
 using namespace vision_core;
@@ -14,7 +17,7 @@ int main() {
   const auto p = EstimateGoalPoseFromBackboardDepths(50,1,40,1.1,60,.9,k);
   assert(p.valid && std::abs(p.x_m) < 1e-12);
   GoalConfig c{}; c.stable_window=c.stable_min_hits=1; c.lost_frames=2;
-  c.smooth_alpha=1; c.post_pickup_wait_sec=0; c.camera_motion_timeout_sec=3;
+  c.smooth_alpha=0; c.post_pickup_wait_sec=0; c.camera_motion_timeout_sec=3;
   c.target_u_norm=.5; c.approach_u_deadband=.05; c.fine_adjust_start_z_m=.8;
   c.hoop_radius_m=.1; c.throwing_range_m=.5; c.position_tolerance_m=.05;
   c.fine_settle_duration_sec=0; c.shoot_yaw_limit_deg=30;
@@ -28,8 +31,20 @@ int main() {
   assert(r.camera_request==CameraRequest::kGoal);
   r=controller.Compute({}, {}, {},100,100,.2,true,{CameraMode::kGoal,true},{});
   assert(r.mode==GoalMode::kSearch);
-  r=controller.Compute({},Board(),Pose(0,.5),100,100,.3,true,{CameraMode::kGoal,true},{});
+  r=controller.Compute({},Board(),Pose(0,.6),100,100,.3,true,{CameraMode::kGoal,true},{});
   assert(r.mode==GoalMode::kFineAdjust);
+  r=controller.Compute({},Board(),Pose(0,.8),100,100,.35,true,{CameraMode::kGoal,true},{});
+  assert(r.action.action==MissionAction::kStepForwardHalf);
+  ActionExecutionFeedback fine_done; fine_done.action_done=true;
+  r=controller.Compute({},Board(),Pose(0,.8),100,100,.36,true,{CameraMode::kGoal,true},fine_done);
+  assert(r.action.action==MissionAction::kNone);
+  assert(r.action.action!=MissionAction::kDefaultPoseMode);
+  r=controller.Compute({},Board(),Pose(.3,.5),100,100,.37,true,{CameraMode::kGoal,true},{});
+  assert(r.action.action==MissionAction::kRightSideStep);
+  r=controller.Compute({},Board(),Pose(-.3,.5),100,100,.38,true,{CameraMode::kGoal,true},{});
+  assert(r.action.action==MissionAction::kLeftSideStep);
+  // smoothing에는 직전 .6m가 남아 있어도 fine은 settle 뒤 현재 raw RGB-D
+  // pose(.3m)를 사용해야 한다.
   r=controller.Compute({},Board(),Pose(0,.3),100,100,.4,true,{CameraMode::kGoal,true},{});
   assert(r.action.action==MissionAction::kStepBack);
   r=controller.Compute({},Board(),Pose(0,.6),100,100,.5,true,{CameraMode::kGoal,true},{});

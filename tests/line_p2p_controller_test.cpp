@@ -93,5 +93,11 @@ int main() {
   assert(std::abs(all_samples->heading_rad - (0.40 / 3.0)) < kEps);
   assert(!all_samples->curvature_valid);
   assert(std::abs(all_samples->curvature_rad) < kEps);
+
+  accumulator.Begin(9, 0.0);
+  LineGuide malformed = Guide(0.0, 0.0, 0.0);
+  malformed.offset = std::numeric_limits<double>::infinity();
+  accumulator.Add(9, 0.5, malformed);
+  assert(!accumulator.FinishAll(9).has_value());
   return 0;
 }

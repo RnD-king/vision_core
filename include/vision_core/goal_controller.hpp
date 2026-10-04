@@ -34,8 +34,6 @@ struct GoalConfig {
   double throwing_range_m{};
   double position_tolerance_m{};
   double fine_settle_duration_sec{};
-  int fine_adjust_window{};
-  int fine_adjust_min_hits{};
   double shoot_yaw_limit_deg{};
 };
 
@@ -110,8 +108,8 @@ private:
   void UpdatePoseTracker(const std::optional<ObjectTarget> &backboard_target,
                          const GoalPoseObservation &goal_pose);
   bool PoseReadyForFineAdjust() const;
-  ActionRequest FineAction() const;
-  double ComputeShootYawRad() const;
+  ActionRequest FineAction(const GoalPoseObservation &pose) const;
+  double ComputeShootYawRad(double x_m, double z_m, double yaw_rad) const;
   void ClearTracking();
 
   GoalConfig config_;

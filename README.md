@@ -21,6 +21,11 @@ LINE READY는 current action 취소가 아니다. 실행 중 긴 LINE action의 
 LineGuide를 집계해 같은 direct selector로 action 하나만 예약하고, current DONE
 뒤 queued action을 시작한다.
 
+현재 action의 ACK는 실행기가 action을 수락하고 시작했다는 뜻이다. READY 뒤
+발행된 queued action의 ACK는 실행기가 그 ID와 payload를 내부 queue에 실제로
+저장했다는 뜻이며, current DONE 직후 정확히 한 번 실행해야 한다. 저장하지
+못한 command에는 ACK하지 않고, 같은 ID의 재수신은 중복 실행하지 않는다.
+
 ## LINE recovery
 
 - 첫 실패: 2초 stationary observation
@@ -39,7 +44,8 @@ LineGuide를 집계해 같은 direct selector로 action 하나만 예약하고, 
 - HURDLE: F5 반복 → raw v 0.75, 10-window/7-hit latch → 현재 action DONE
   → camera DOWN → STEP_FORWARD_ONE(10) → HUDDLE(16)
 - GOAL: camera GOAL → backboard RGB-D geometry → 거리 우선 fine → shoot yaw
-  ±30도 이내 signed SHOOT, 아니면 side step 후 새 RGB-D 재계산
+  ±30도 이내 signed SHOOT, 아니면 side step 후 settle → 현재 frame의 fresh
+  raw RGB-D pose로 geometry 재계산
 
 카메라 trigger는 진행 중 locomotion을 취소하지 않는다. DONE 뒤 camera request를
 내고, camera settled 동안에는 locomotion을 HOLD한다.
