@@ -7,9 +7,6 @@
 namespace vision_core {
 
 Features ComputeLineFeatures(const std::vector<Point2> &points, int image_width,
-                             int image_height, bool previous_in_recovery,
-                             double vx_prev, double wz_prev,
-                             const FeatureConfig &config,
-                             LineFeatureState *state = nullptr);
+                             int image_height, const FeatureConfig &config);
 
 } // namespace vision_core

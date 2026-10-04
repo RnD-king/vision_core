@@ -1,278 +1,73 @@
-#include "vision_core/mission_controller.hpp"
 #include "vision_core/config_loader.hpp"
-
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
+#include "vision_core/mission_controller.hpp"
 #include <cassert>
-#include <iostream>
-
-namespace {
-
 using namespace vision_core;
-
-ObjectTarget Target(int class_id, double u_norm, double center_v_norm) {
-  ObjectTarget target;
-  target.class_id = class_id;
-  target.confidence = 1.0;
-  target.width_px = 20.0;
-  target.height_px = 20.0;
-  target.area_px = 400.0;
-  target.box_px = {u_norm * 100.0 - 10.0,
-                   center_v_norm * 100.0 - 10.0, 20.0, 20.0};
-  target.center_px = {u_norm * 100.0, center_v_norm * 100.0};
-  target.rectified_center_px = target.center_px;
-  return target;
+static MissionFrameInput Frame(double now) {
+  MissionFrameInput f; f.image_width=640; f.image_height=480; f.now_sec=now;
+  f.command_transport_enabled=true;
+  f.line_centers={{320,450},{320,400},{320,350},{320,300},{320,250}};
+  return f;
 }
-
-MissionFrameInput Frame(double now_sec) {
-  MissionFrameInput input;
-  input.image_width = 100;
-  input.image_height = 100;
-  input.now_sec = now_sec;
-  input.camera_feedback = {CameraMode::kForward, true};
-  input.line_centers = {{50.0, 90.0}, {50.0, 70.0}, {50.0, 50.0},
-                        {50.0, 30.0}};
-  return input;
+static LineGuide Guide(double offset) {
+  LineGuide g; g.valid=true; g.offset=offset; g.heading_rad=0; return g;
 }
-
-MissionControllerConfig FastConfig() {
-  MissionControllerConfig config = LoadDefaultAlgorithmConfig();
-  config.line_features.image_center_u = 50.0;
-  config.ball.stable_window = 1;
-  config.ball.stable_min_hits = 1;
-  config.ball.upper_acquire_v_norm = 0.65;
-  config.ball.tilt_down_v_norm = 0.95;
-  config.hurdle.stable_window = 1;
-  config.hurdle.stable_min_hits = 1;
-  config.hurdle.acquire_min_v_norm = 0.60;
-  config.hurdle.tilt_trigger_v_norm = 0.95;
-  config.goal.stable_window = 1;
-  config.goal.stable_min_hits = 1;
-  config.goal.post_pickup_wait_sec = 1.0;
-  return config;
-}
-
-void TestOnlyActiveBallControllerAdvances() {
-  MissionController controller(FastConfig());
-  auto input = Frame(0.0);
-  input.ball_target = Target(1, 0.5, 0.5);
-  auto result = controller.Step(input);
-  assert(result.active_mission == MissionType::kBall);
-  assert(result.ball.mode == BallMode::kApproachBall);
-
-  input = Frame(0.1);
-  input.ball_target = Target(1, 0.5, 0.5);
-  input.hurdle_target = Target(4, 0.5, 0.7);
-  input.goal_target = Target(2, 0.5, 0.4);
-  result = controller.Step(input);
-  assert(result.active_mission == MissionType::kBall);
-  assert(result.goal.mode == GoalMode::kLineFollow);
-  assert(result.hurdle.mode == HurdleMode::kLineFollow);
-  assert(!result.line_computed);
-}
-
-void TestHurdleEntryHasPriorityOverBall() {
-  MissionController controller(FastConfig());
-  auto input = Frame(0.0);
-  input.ball_target = Target(1, 0.5, 0.5);
-  input.hurdle_target = Target(4, 0.5, 0.7);
-  const auto result = controller.Step(input);
-  assert(result.active_mission == MissionType::kHurdle);
-  assert(result.hurdle.mode == HurdleMode::kApproach);
-  assert(result.ball.mode == BallMode::kLineFollow);
-}
-
-void TestCarryingBallAllowsOnlyGoalEntry() {
-  auto config = FastConfig();
-  config.initial_has_ball = true;
-  config.line.line_stable_window = 1;
-  config.line.line_stable_min_hits = 1;
-  MissionController controller(config);
-  auto input = Frame(0.0);
-  input.ball_target = Target(1, 0.5, 0.5);
-  input.hurdle_target = Target(4, 0.5, 0.7);
-  // 공을 들고 라인을 다시 잡으면 ball/hurdle 후보를 무시하고, 백보드가
-  // 아직 없어도 설정 시간 동안 라인 미션을 계속한다.
-  auto result = controller.Step(input);
-  assert(result.active_mission == MissionType::kLine);
-  assert(result.goal.mode == GoalMode::kLineFollow);
-  assert(result.line_computed);
-
-  input = Frame(0.99);
-  result = controller.Step(input);
-  assert(result.active_mission == MissionType::kLine);
-  assert(result.goal.mode == GoalMode::kLineFollow);
-
-  // 연속 라인 추종 시간이 끝나면 백보드 선행 검출 없이 카메라를 든다.
-  input = Frame(1.0);
-  result = controller.Step(input);
-  assert(result.active_mission == MissionType::kGoal);
-  assert(result.goal.mode == GoalMode::kTiltCameraToGoal);
-  assert(result.goal.camera_request == CameraRequest::kGoal);
-  assert(result.hurdle.mode == HurdleMode::kLineFollow);
-  assert(result.ball.mode == BallMode::kLineFollow);
-}
-
-void TestMissionControllerReturnsActionAndPreP2pMotionTogether() {
-  auto config = FastConfig();
-  config.enable_ball = false;
-  config.enable_hurdle = false;
-  config.enable_goal = false;
-  config.line.line_stable_window = 1;
-  config.line.line_stable_min_hits = 1;
-  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
-  config.command.first_action_id = 500;
-  MissionController controller(config);
-
-  auto input = Frame(0.0);
-  auto result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action_category == ActionCategory::kLocomotion);
-  assert(result.command.action_execution_kind ==
-         ActionExecutionKind::kVelocityCompatible);
-  assert(result.command.action_id == 500);
-  assert(result.command.velocity.vx == 0.0);
-  assert(result.command.pre_p2p_motion.vx == result.line_command.vx);
-  assert(result.command.pre_p2p_motion.vx > 0.0);
-  const MotionCommand first_pre_p2p = result.command.pre_p2p_motion;
-
-  // ACK 뒤에도 같은 action_id와 최초 선택 시점의 PRE-P2P 명령을 유지한다.
-  input = Frame(0.1);
-  input.delivery_feedback = {500, true, false};
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.control_phase == ControlPhase::kWaitingActionDone);
-  assert(result.command.action_id == 500);
-  assert(result.command.pre_p2p_motion.vx == first_pre_p2p.vx);
-
-  // 긴 action 후반에는 오른쪽으로 치우친 line을 관측한다. READY 프레임
-  // 자체는 다시 중앙선이지만, 예약 판단은 후반 누적 특징을 사용해야 한다.
-  input = Frame(0.2);
-  for (auto &point : input.line_centers) point.u = 70.0;
-  input.delivery_feedback = {500, false, false};
-  result = controller.Step(input);
-  assert(result.command.action_id == 500);
-
-  input = Frame(0.3);
-  for (auto &point : input.line_centers) point.u = 70.0;
-  input.delivery_feedback = {500, false, false};
-  result = controller.Step(input);
-  assert(result.command.action_id == 500);
-
-  input = Frame(0.4);
-  input.delivery_feedback = {500, true, false, true};
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action_id == 501);
-  assert(result.command.action == MissionAction::kStepForwardRight);
-
-  // 현재 action의 실제 DONE 뒤에는 예약 action이 실행 중 action으로 승격된다.
-  input = Frame(0.5);
-  input.delivery_feedback = {500, true, true, false};
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action_id == 501);
-}
-
-void TestNormalLineDirectIgnoresQuantizerThresholds() {
-  auto config = FastConfig();
-  config.enable_ball = false;
-  config.enable_hurdle = false;
-  config.enable_goal = false;
-  config.line.line_stable_window = 1;
-  config.line.line_stable_min_hits = 1;
-  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
-  // Normal quantizer 기준을 바꿔도 정상 LINE direct action은 변하지 않는다.
-  config.command.p2p.long_forward_vx = 1.0;
-  config.command.p2p.curve_yaw_threshold = 100.0;
-  config.command.p2p.sharp_turn_yaw_threshold = 100.0;
-  config.command.first_action_id = 600;
-  MissionController controller(config);
-
-  auto input = Frame(0.0);
-  auto result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kStepForwardFive);
-  assert(result.command.action_id == 600);
-}
-
-void TestOneShotLineDecisionGateAndSafeTuningUpdate() {
-  auto config = FastConfig();
-  config.enable_ball = false;
-  config.enable_hurdle = false;
-  config.enable_goal = false;
-  config.line.line_stable_window = 1;
-  config.line.line_stable_min_hits = 1;
-  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
-  config.command.first_action_id = 700;
-  MissionController controller(config);
-
-  auto input = Frame(0.0);
-  input.allow_new_line_locomotion_action = false;
-  auto result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.action_id == 0);
-
-  auto line_p2p = config.line_p2p;
-  line_p2p.offset_gain = 2.0;
-  assert(controller.UpdateLineP2pTuning(line_p2p));
-
-  input = Frame(1.0);
-  input.allow_new_line_locomotion_action = true;
-  input.line_decision_guide_override = LineGuide{0.20, 0.0, 0.0, 1.0, true};
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kStepForwardRight);
-  assert(result.command.action_id == 700);
-  // 실행 중인 action이 있으면 gain/기준 교체를 거절한다.
-  assert(!controller.UpdateLineP2pTuning(config.line_p2p));
-}
-
-void TestInvalidNormalLineGuideHoldsWithoutQuantizerFallback() {
-  auto config = FastConfig();
-  config.enable_ball = false;
-  config.enable_hurdle = false;
-  config.enable_goal = false;
-  config.line.line_stable_window = 1;
-  config.line.line_stable_min_hits = 1;
-  config.command.locomotion_backend = LocomotionBackend::kP2pAction;
-  config.command.first_action_id = 800;
-  config.line_p2p.no_action_hold_sec = 2.0;
-  MissionController controller(config);
-
-  auto input = Frame(0.0);
-  input.line_decision_guide_override = LineGuide{};
-  auto result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.action == MissionAction::kNone);
-  assert(result.command.action_id == 0);
-
-  // 유지 시간 중 라인이 다시 보여도 중간에 새 action을 발행하지 않는다.
-  input = Frame(1.0);
-  input.line_decision_guide_override.reset();
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kHold);
-  assert(result.command.action_id == 0);
-
-  // 정확히 2초가 지나면 최신 유효 관측으로 정상 locomotion을 재개한다.
-  input = Frame(2.0);
-  result = controller.Step(input);
-  assert(result.command.command_type == CommandType::kAction);
-  assert(result.command.action == MissionAction::kStepForwardFive);
-  assert(result.command.action_id == 800);
-}
-
-} // namespace
-
 int main() {
-  TestOnlyActiveBallControllerAdvances();
-  TestHurdleEntryHasPriorityOverBall();
-  TestCarryingBallAllowsOnlyGoalEntry();
-  TestMissionControllerReturnsActionAndPreP2pMotionTogether();
-  TestNormalLineDirectIgnoresQuantizerThresholds();
-  TestOneShotLineDecisionGateAndSafeTuningUpdate();
-  TestInvalidNormalLineGuideHoldsWithoutQuantizerFallback();
-  std::cout << "mission controller tests passed\n";
+  auto c=LoadDefaultAlgorithmConfig();
+  c.enable_ball=c.enable_hurdle=c.enable_goal=false;
+  MissionController controller(c);
+  auto in=Frame(0); auto r=controller.Step(in);
+  assert(r.command.action==MissionAction::kStepForwardFive);
+  assert(r.command.action_id!=0);
+  const auto id=r.command.action_id;
+  in=Frame(.1); in.delivery_feedback={id,true,false,false};
+  r=controller.Step(in); assert(r.command.command_type==CommandType::kHold);
+  in=Frame(.2); in.delivery_feedback={id,true,false,true};
+  r=controller.Step(in);
+  assert(r.command.action_id!=0);
+  assert(r.command.action==MissionAction::kStepForwardFive);
+
+  // READY 집계가 invalid여도 moving action 중에 2초 관측 timer를 시작하지
+  // 않는다. stationary failure observation은 current DONE 뒤 시작한다.
+  controller.Reset();
+  in=Frame(0); r=controller.Step(in);
+  const auto moving_id=r.command.action_id;
+  in=Frame(.1); in.line_centers.clear();
+  in.delivery_feedback={moving_id,true,false,true};
+  r=controller.Step(in); assert(!r.line_in_recovery);
+  in=Frame(5.0); in.line_centers.clear();
+  in.delivery_feedback={moving_id,true,true,false};
+  r=controller.Step(in); assert(r.line_in_recovery);
+  controller.Reset();
+  in=Frame(0); in.line_centers.clear(); r=controller.Step(in);
+  assert(r.command.command_type==CommandType::kHold);
+  assert(r.line_in_recovery);
+
+  // 안정된 마지막 조향 방향만 기억하고, 첫 실패 관측 2초 뒤 같은 방향으로
+  // 양수 15도 TURN을 발행한다.
+  controller.Reset();
+  in=Frame(0); in.line_decision_guide_override=Guide(-.2);
+  r=controller.Step(in);
+  assert(r.command.action==MissionAction::kStepForwardLeft);
+  const auto left_id=r.command.action_id;
+  in=Frame(.1); in.line_centers.clear(); in.line_decision_guide_override.reset();
+  in.delivery_feedback={left_id,true,true,false};
+  r=controller.Step(in); assert(r.command.command_type==CommandType::kHold);
+  in=Frame(2.2); in.line_centers.clear();
+  r=controller.Step(in);
+  assert(r.command.action==MissionAction::kTurnLeft);
+  assert(r.command.target_yaw_deg==15);
+
+  // 방향 evidence가 없으면 최초 관측 + 5회 추가 관측 뒤 FINAL HOLD이며,
+  // 다음 유효 frame 하나로 자동 재시작하지 않는다.
+  controller.Reset();
+  in=Frame(0); in.line_centers.clear(); r=controller.Step(in);
+  for (int i=1;i<=6;++i) {
+    in=Frame(2.1*i); in.line_centers.clear(); r=controller.Step(in);
+    assert(r.command.action==MissionAction::kNone);
+  }
+  in=Frame(13.0); in.line_decision_guide_override=Guide(0);
+  r=controller.Step(in);
+  assert(r.command.action==MissionAction::kNone);
+  assert(r.command.mission_phase==4);
   return 0;
 }

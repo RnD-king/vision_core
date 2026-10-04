@@ -69,7 +69,8 @@ LineGuideAccumulator::Finish(std::uint64_t action_id, double now_sec) {
       curvature_weight += weight;
     }
     // confidence는 현재 판단 gain에는 사용하지 않고 진단값만 집계한다.
-    confidence_sum += weight * sample.guide.confidence;
+    if (std::isfinite(sample.guide.confidence))
+      confidence_sum += weight * sample.guide.confidence;
     total_weight += weight;
   }
 
@@ -106,7 +107,8 @@ LineGuideAccumulator::FinishAll(std::uint64_t action_id) {
       curvature_count += 1.0;
     }
     // confidence는 의도 계산에는 쓰지 않고 진단값으로만 평균한다.
-    result.confidence += sample.guide.confidence;
+    if (std::isfinite(sample.guide.confidence))
+      result.confidence += sample.guide.confidence;
   }
   const double count = static_cast<double>(samples_.size());
   result.offset /= count;

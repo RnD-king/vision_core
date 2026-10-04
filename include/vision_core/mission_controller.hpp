@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <optional>
 #include <vector>
 
@@ -10,7 +11,6 @@
 #include "vision_core/line_detection_extractor.hpp"
 #include "vision_core/line_feature_extractor.hpp"
 #include "vision_core/line_p2p_controller.hpp"
-#include "vision_core/line_velocity_controller.hpp"
 #include "vision_core/object_target_extractor.hpp"
 #include "vision_core/object_association_tracker.hpp"
 
@@ -18,7 +18,7 @@ namespace vision_core {
 
 struct MissionControllerConfig {
   FeatureConfig line_features;
-  RuleConfig line;
+  LineTrackingConfig line;
   LineP2pConfig line_p2p;
   BallConfig ball;
   HurdleConfig hurdle;
@@ -31,7 +31,6 @@ struct MissionControllerConfig {
   // backboard 관측으로 인정한다.
   double backboard_min_depth_m{};
   double backboard_max_depth_m{};
-  double line_observation_dt{};
   bool enable_ball{};
   bool enable_hurdle{};
   bool enable_goal{};
@@ -41,8 +40,6 @@ struct MissionControllerConfig {
 
 struct MissionFrameInput {
   std::vector<Point2> line_centers;
-  double previous_vx{0.0};
-  double previous_wz{0.0};
   std::optional<ObjectTarget> ball_target;
   std::optional<ObjectTarget> hurdle_target;
   std::optional<ObjectTarget> goal_target;
@@ -59,20 +56,17 @@ struct MissionFrameInput {
   // command_transport_enabled=false인 기존 직접 호출자를 위한 호환 입력이다.
   ActionExecutionFeedback action_feedback;
   CommandDeliveryFeedback delivery_feedback;
-  // false이면 인식/특징/FSM과 기존 action feedback 처리는 계속하지만 새로운
-  // LINE locomotion action만 시작하지 않는다.
-  bool allow_new_line_locomotion_action{true};
+  // false이면 인식/FSM과 기존 feedback 처리는 계속하지만 새 LINE action만
+  // 시작하지 않는다. 튜닝 도구의 one-shot gate용이다.
+  bool allow_new_line_action{true};
   // 단발 튜닝처럼 여러 프레임에서 집계한 guide로 이번 LINE 판단만 수행한다.
   std::optional<LineGuide> line_decision_guide_override;
 };
 
 struct MissionFrameResult {
-  // 최종 ROS용 P2P action과 MuJoCo가 선택적으로 사용할 양자화 전
-  // pre_p2p_motion이 같은 결과에 함께 들어 있다.
   ControlCommand command;
   MissionType active_mission{MissionType::kLine};
   Features line_features;
-  MotionCommand line_command;
   bool line_computed{false};
   bool line_in_recovery{true};
   bool has_ball{false};
@@ -97,8 +91,6 @@ struct PerceptionFrameInput {
   bool imu_valid{false};
   double roll_rad{0.0};
   double pitch_rad{0.0};
-  double previous_vx{0.0};
-  double previous_wz{0.0};
   int image_width{0};
   int image_height{0};
   double now_sec{0.0};
@@ -106,7 +98,7 @@ struct PerceptionFrameInput {
   bool command_transport_enabled{false};
   ActionExecutionFeedback action_feedback;
   CommandDeliveryFeedback delivery_feedback;
-  bool allow_new_line_locomotion_action{true};
+  bool allow_new_line_action{true};
   std::optional<LineGuide> line_decision_guide_override;
 };
 
@@ -148,25 +140,50 @@ public:
   void Reset();
 
 private:
+  enum class LineState {
+    kNormal,
+    kFailureObserve,
+    kRecoveryTurn,
+    kRecoveryObserve,
+    kFinalHold,
+  };
+  enum class DirectionEvidence { kNone, kLeft, kRight };
+
   MissionFrameResult StepWithLineImageCenter(
       const MissionFrameInput &input,
       std::optional<double> line_image_center_u);
-  MotionCommand StepLine(const Features &features, bool *reference_valid,
-                         Features *updated_features);
+  ActionRequest ComputeLineAction(const LineGuide &guide,
+                                  const MissionFrameInput &input,
+                                  bool action_active,
+                                  bool action_done,
+                                  bool *reference_valid);
+  ActionRequest CruiseAction(const LineGuide &guide, bool queue_eligible);
+  void BeginObservation(LineState state, double now_sec);
+  void AddObservation(const LineGuide &guide);
+  std::optional<LineGuide> FinishObservation() const;
   void BeginLineReacquisition();
   void EnterMission(MissionType mission);
   void FinishMission();
 
   MissionControllerConfig config_;
-  LineVelocityController line_controller_;
   LineP2pController line_p2p_controller_;
   LineGuideAccumulator line_guide_accumulator_;
-  bool short_line_collection_active_{false};
-  std::uint64_t short_line_collection_action_id_{0};
-  double short_line_collection_end_sec_{0.0};
   std::uint64_t ready_line_action_id_{0};
-  bool line_no_action_hold_active_{false};
-  double line_no_action_hold_end_sec_{0.0};
+  bool line_failure_pending_done_{false};
+  LineState line_state_{LineState::kNormal};
+  DirectionEvidence line_direction_evidence_{DirectionEvidence::kNone};
+  double line_observation_start_sec_{0.0};
+  bool line_observation_active_{false};
+  double observation_offset_sum_{0.0};
+  double observation_heading_sum_{0.0};
+  double observation_confidence_sum_{0.0};
+  double observation_curvature_sum_{0.0};
+  int observation_valid_count_{0};
+  int observation_curvature_count_{0};
+  int line_no_evidence_retries_{0};
+  int line_recovery_turns_{0};
+  bool recovery_turn_issued_{false};
+  std::deque<bool> line_stability_history_;
   BallController ball_controller_;
   HurdleController hurdle_controller_;
   GoalController goal_controller_;
@@ -175,7 +192,6 @@ private:
   ObjectAssociationTracker ball_association_tracker_;
   ObjectAssociationTracker backboard_association_tracker_;
   ObjectAssociationTracker hurdle_association_tracker_;
-  LineFeatureState line_feature_state_;
   MissionType active_mission_{MissionType::kLine};
   bool has_ball_{false};
   BallResult ball_result_;

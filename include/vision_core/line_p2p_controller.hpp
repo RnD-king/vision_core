@@ -14,12 +14,15 @@ struct LineP2pConfig {
   double offset_gain{};
   double heading_gain{};
   double steering_deadband{};
-  // 1걸음/제자리회전처럼 짧은 locomotion action이 DONE된 뒤 다음 action을
-  // 고르기 전에 정지 상태로 LineGuide를 모으는 시간이다.
-  double short_post_collect_sec{};
-  // 유효 라인이 없거나 명령이 모든 deadband 안이면 별도 action 없이
-  // 현재 자세를 유지하며 새 locomotion 판단을 잠그는 시간이다.
-  double no_action_hold_sec{};
+  // 판단 실패 또는 recovery 회전 뒤 stationary re-observation 시간이다.
+  double failure_observation_sec{};
+  // 이 개수 이상의 유효 O/H 표본만 정상 LINE 판단에 사용한다.
+  int failure_min_valid_samples{};
+  // 방향 기억 없이 정지 재관측하는 추가 횟수와 방향 기억을 따라 회전하는
+  // 최대 횟수다. 한도를 넘으면 명시적 Reset 전까지 FINAL HOLD다.
+  int no_evidence_max_retries{};
+  int recovery_max_turns{};
+  int recovery_turn_yaw_deg{};
 };
 
 class LineP2pController {
