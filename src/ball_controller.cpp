@@ -315,8 +315,6 @@ BallResult BallController::Compute(
     return result;
   case BallMode::kBallRecoveryForward:
   case BallMode::kBallRecoveryDown: {
-    if (mode_ == BallMode::kBallRecoveryDown)
-      result.camera_request = CameraRequest::kDown;
     if (feedback.action_active && !feedback.action_done) return result;
     if (feedback.action_done) {
       settle_until_sec_ = now_sec + config_.recovery_settle_duration_sec;

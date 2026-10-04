@@ -15,8 +15,7 @@ enum class HurdleMode {
   kCross,
   kReturnCameraToLine,
   kRecoveryForward,
-  kRecoveryDown,
-  kFailed,
+  kFailed = 8,
 };
 
 struct HurdleConfig {

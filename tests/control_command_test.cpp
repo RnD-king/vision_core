@@ -4,6 +4,26 @@
 #endif
 #include <cassert>
 using namespace vision_core;
+static_assert(static_cast<int>(MissionAction::kDefaultPosition)==1);
+static_assert(static_cast<int>(MissionAction::kDefaultPoseMode)==2);
+static_assert(static_cast<int>(MissionAction::kStepForwardHalf)==3);
+static_assert(static_cast<int>(MissionAction::kStepBack)==4);
+static_assert(static_cast<int>(MissionAction::kLeftSideStep)==5);
+static_assert(static_cast<int>(MissionAction::kRightSideStep)==6);
+static_assert(static_cast<int>(MissionAction::kTurnLeft)==7);
+static_assert(static_cast<int>(MissionAction::kTurnRight)==8);
+static_assert(static_cast<int>(MissionAction::kWalkMode)==9);
+static_assert(static_cast<int>(MissionAction::kStepForwardOne)==10);
+static_assert(static_cast<int>(MissionAction::kStepForwardLeft)==11);
+static_assert(static_cast<int>(MissionAction::kStepForwardRight)==12);
+static_assert(static_cast<int>(MissionAction::kStepForwardFive)==13);
+static_assert(static_cast<int>(MissionAction::kPickBall)==14);
+static_assert(static_cast<int>(MissionAction::kRecatch)==15);
+static_assert(static_cast<int>(MissionAction::kHurdle)==16);
+static_assert(static_cast<int>(MissionAction::kShoot)==17);
+static_assert(static_cast<int>(MissionAction::kTurnLeftAndStep)==18);
+static_assert(static_cast<int>(MissionAction::kTurnRightAndStep)==19);
+static_assert(static_cast<int>(MissionAction::kContactWalk)==20);
 int main() {
   ControlCommandCoordinator c({1,10});
   ActionRequest first{MissionAction::kStepForwardFive,

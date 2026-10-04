@@ -53,8 +53,10 @@ LineGuide를 집계해 같은 direct selector로 action 하나만 예약하고, 
 ## Build and test
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$PWD/install"
 cmake --build build -j
 ctest --test-dir build --output-on-failure
-cmake --install build --prefix install
+cmake --install build
 ```

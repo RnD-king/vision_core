@@ -25,6 +25,8 @@ static void Reject(const std::string &yaml, const std::string &from,
 int main(int argc, char **argv) {
   assert(argc == 2);
   const auto c = vision_core::LoadAlgorithmConfig(argv[1]);
+  const auto defaults = vision_core::LoadDefaultAlgorithmConfig();
+  assert(defaults.command.first_action_id != 0);
   assert(c.line_p2p.failure_min_valid_samples == 5);
   assert(c.line_p2p.recovery_max_turns == 5);
   assert(c.line_p2p.recovery_turn_yaw_deg == 15);
@@ -50,5 +52,34 @@ int main(int argc, char **argv) {
          "action_ack_timeout_sec: .nan");
   Reject(text.str(), "backboard_min_depth_m: 0.20",
          "backboard_min_depth_m: 6.00");
+  Reject(text.str(), "recovery_turn_yaw_deg: 15",
+         "recovery_turn_yaw_deg: 0");
+  Reject(text.str(), "recovery_turn_yaw_deg: 15",
+         "recovery_turn_yaw_deg: 181");
+  Reject(text.str(), "\n    confidence: 0.60\n    min_box_width: 1.0",
+         "\n    confidence: .nan\n    min_box_width: 1.0");
+  Reject(text.str(), "min_box_width: 1.0", "min_box_width: -1.0");
+  Reject(text.str(), "ball_confidence: 0.60", "ball_confidence: 1.1");
+  Reject(text.str(), "ball_class_id: 1", "ball_class_id: -1");
+  Reject(text.str(), "hurdle_class_id: 4", "hurdle_class_id: 3");
+  Reject(text.str(), "missing_frame_limit: 5", "missing_frame_limit: -1");
+  Reject(text.str(), "center_distance_weight: 1.0",
+         "center_distance_weight: -1.0");
+
+  auto direct = c;
+  direct.line_detection.class_id = -1;
+  bool direct_rejected = false;
+  try { vision_core::ValidateAlgorithmConfig(direct); }
+  catch (const std::runtime_error &) { direct_rejected = true; }
+  assert(direct_rejected);
+
+  auto relaxed_association = c;
+  relaxed_association.object_association.max_center_distance_norm = 1.2;
+  vision_core::ValidateAlgorithmConfig(relaxed_association);
+
+  bool constructor_rejected = false;
+  try { vision_core::MissionController invalid(direct); }
+  catch (const std::runtime_error &) { constructor_rejected = true; }
+  assert(constructor_rejected);
   return 0;
 }

@@ -6,8 +6,8 @@
 
 namespace vision_core {
 
-// YOLO detection 목록에서 line class의 bbox 중심만 추출한다. 아래쪽 점부터
-// 위쪽 점 순서로 정렬하여 기존 ROS LineDetectionAdapter와 같은 입력을 만든다.
+// YOLO detection 목록에서 line class의 bbox 중심만 추출하고 아래쪽 점부터
+// 위쪽 점 순서로 정렬한다.
 struct LineDetectionConfig {
   int class_id{};
   double confidence{};

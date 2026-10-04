@@ -23,19 +23,25 @@ ActionRequest RecoveryTurn(bool left, int yaw_deg) {
           ActionCategory::kLocomotion,
           static_cast<std::int16_t>(std::max(0, yaw_deg)), false};
 }
+MissionControllerConfig ValidatedConfig(
+    const MissionControllerConfig &config) {
+  ValidateAlgorithmConfig(config);
+  return config;
+}
 } // namespace
 
 MissionController::MissionController()
     : MissionController(LoadDefaultAlgorithmConfig()) {}
 
 MissionController::MissionController(const MissionControllerConfig &config)
-    : config_(config), line_p2p_controller_(config.line_p2p),
-      ball_controller_(config.ball), hurdle_controller_(config.hurdle),
-      goal_controller_(config.goal), command_coordinator_(config.command),
-      ball_association_tracker_(config.object_association),
-      backboard_association_tracker_(config.object_association),
-      hurdle_association_tracker_(config.object_association),
-      has_ball_(config.initial_has_ball) {
+    : config_(ValidatedConfig(config)),
+      line_p2p_controller_(config_.line_p2p),
+      ball_controller_(config_.ball), hurdle_controller_(config_.hurdle),
+      goal_controller_(config_.goal), command_coordinator_(config_.command),
+      ball_association_tracker_(config_.object_association),
+      backboard_association_tracker_(config_.object_association),
+      hurdle_association_tracker_(config_.object_association),
+      has_ball_(config_.initial_has_ball) {
   if (has_ball_) goal_controller_.StartAfterPickup(0.0);
 }
 
@@ -309,7 +315,6 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
     }
     line_action = ComputeLineAction(decision, input, active, done,
                                     &line_reference_valid);
-    if (!input.allow_new_line_action && !active) line_action = {};
   };
 
   switch (active_mission_) {
@@ -415,6 +420,12 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
   } else {
     request = line_action; phase = static_cast<int>(line_state_);
   }
+  // one-shot tuning gate는 perception/FSM/feedback 처리를 막거나 기존
+  // pending/queued action을 취소하지 않는다. coordinator 직전의 새 LINE
+  // request만 제거하여 READY/DONE 조기 반환 경로까지 동일하게 막는다.
+  if (active_mission_ == MissionType::kLine &&
+      !input.allow_new_line_action)
+    request = {};
   output.command = command_coordinator_.Compute(
       active_mission_, phase, request, camera_request,
       input.delivery_feedback, input.now_sec);
@@ -553,7 +564,10 @@ PerceptionMissionFrameResult MissionController::StepPerception(
 
 bool MissionController::UpdateLineP2pTuning(const LineP2pConfig &line_p2p) {
   if (last_command_.action_id != 0 || line_observation_active_) return false;
-  config_.line_p2p = line_p2p;
+  MissionControllerConfig candidate = config_;
+  candidate.line_p2p = line_p2p;
+  ValidateAlgorithmConfig(candidate);
+  config_ = candidate;
   line_p2p_controller_ = LineP2pController(line_p2p);
   return true;
 }

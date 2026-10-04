@@ -35,7 +35,7 @@ vision_algorithm:
     camera_motion_timeout_sec: 3.0
     pickup_max_attempts: 3
     pickup_success_missing_frames: 5
-    ball_ignore_duration_sec: 30.0
+    ball_ignore_duration_sec: 5.0
     fine_target_u_norm: 0.50
     fine_target_v_norm: 0.70
     fine_u_deadband: 0.06

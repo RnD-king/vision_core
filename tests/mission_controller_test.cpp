@@ -4,6 +4,8 @@
 #undef NDEBUG
 #endif
 #include <cassert>
+#include <limits>
+#include <stdexcept>
 using namespace vision_core;
 static MissionFrameInput Frame(double now) {
   MissionFrameInput f; f.image_width=640; f.image_height=480; f.now_sec=now;
@@ -165,5 +167,81 @@ int main() {
   }
   assert(r.command.action==MissionAction::kNone);
   assert(r.command.mission_phase==4);
+
+  // one-shot gate는 기존 action ACK/DONE을 처리하되 READY queue와 DONE
+  // successor를 새로 만들지 않는다.
+  MissionController gated(c);
+  in=Frame(0); r=gated.Step(in);
+  const auto gated_id=r.command.action_id;
+  assert(gated_id!=0);
+  in=Frame(.1); in.allow_new_line_action=false;
+  in.delivery_feedback={gated_id,true,false,false};
+  r=gated.Step(in);
+  assert(r.command.action_id==gated_id);
+  assert(r.command.control_phase==ControlPhase::kWaitingActionDone);
+  in=Frame(.2); in.allow_new_line_action=false;
+  in.delivery_feedback={gated_id,true,false,true};
+  r=gated.Step(in);
+  assert(r.command.action_id==gated_id);
+  assert(r.command.control_phase==ControlPhase::kWaitingActionDone);
+  in=Frame(.3); in.allow_new_line_action=false;
+  in.delivery_feedback={gated_id,true,true,false};
+  r=gated.Step(in);
+  assert(r.command.action_id==0);
+  assert(r.command.action==MissionAction::kNone);
+
+  // gate가 내려가기 전에 만들어진 queued action은 취소하지 않고 한 번
+  // 승격·완료시키며, 그 뒤 successor만 금지한다.
+  MissionController queued(c);
+  in=Frame(0); r=queued.Step(in);
+  const auto current_id=r.command.action_id;
+  in=Frame(.1); in.delivery_feedback={current_id,true,false,false};
+  r=queued.Step(in);
+  in=Frame(.2); in.delivery_feedback={current_id,true,false,true};
+  r=queued.Step(in);
+  const auto queued_id=r.command.action_id;
+  assert(queued_id!=0 && queued_id!=current_id);
+  assert(r.command.control_phase==ControlPhase::kWaitingQueuedActionAck);
+  in=Frame(.3); in.allow_new_line_action=false;
+  in.delivery_feedback={queued_id,true,false,false};
+  r=queued.Step(in);
+  assert(r.command.action_id==queued_id);
+  assert(r.command.control_phase==ControlPhase::kWaitingQueuedActionStart);
+  in=Frame(.4); in.allow_new_line_action=false;
+  in.delivery_feedback={current_id,true,true,false};
+  r=queued.Step(in);
+  assert(r.command.action_id==queued_id);
+  assert(r.command.control_phase==ControlPhase::kWaitingActionDone);
+  in=Frame(.5); in.allow_new_line_action=false;
+  in.delivery_feedback={queued_id,true,true,false};
+  r=queued.Step(in);
+  assert(r.command.action_id==0);
+
+  // runtime tuning은 완성 config로 검증한 뒤 원자적으로 적용한다.
+  MissionController tuning(c);
+  auto valid_tuning=c.line_p2p;
+  valid_tuning.offset_gain=0.0;
+  assert(tuning.UpdateLineP2pTuning(valid_tuning));
+  auto invalid_tuning=valid_tuning;
+  invalid_tuning.offset_gain=-1.0;
+  bool rejected=false;
+  try { (void)tuning.UpdateLineP2pTuning(invalid_tuning); }
+  catch (const std::runtime_error &) { rejected=true; }
+  assert(rejected);
+  invalid_tuning=valid_tuning;
+  invalid_tuning.steering_deadband=-1.0;
+  rejected=false;
+  try { (void)tuning.UpdateLineP2pTuning(invalid_tuning); }
+  catch (const std::runtime_error &) { rejected=true; }
+  assert(rejected);
+  invalid_tuning=valid_tuning;
+  invalid_tuning.heading_gain=std::numeric_limits<double>::quiet_NaN();
+  rejected=false;
+  try { (void)tuning.UpdateLineP2pTuning(invalid_tuning); }
+  catch (const std::runtime_error &) { rejected=true; }
+  assert(rejected);
+  in=Frame(0); in.line_decision_guide_override=Guide(.5);
+  r=tuning.Step(in);
+  assert(r.command.action==MissionAction::kStepForwardFive);
   return 0;
 }

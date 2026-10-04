@@ -31,7 +31,6 @@ const char *HurdleController::ModeName(HurdleMode mode) {
   case HurdleMode::kCross: return "HURDLE_CROSS";
   case HurdleMode::kReturnCameraToLine: return "HURDLE_CAMERA_FORWARD";
   case HurdleMode::kRecoveryForward: return "HURDLE_RECOVERY_FORWARD";
-  case HurdleMode::kRecoveryDown: return "HURDLE_RECOVERY_DOWN";
   case HurdleMode::kFailed: return "HURDLE_FAILED";
   }
   return "UNKNOWN";
@@ -190,9 +189,6 @@ HurdleResult HurdleController::Compute(
     }
     return result;
   case HurdleMode::kRecoveryForward:
-  case HurdleMode::kRecoveryDown:
-    if (mode_ == HurdleMode::kRecoveryDown)
-      result.camera_request = CameraRequest::kDown;
     if (feedback.action_active && !feedback.action_done) return result;
     if (feedback.action_done) {
       settle_until_sec_ = now_sec + config_.recovery_settle_duration_sec;
@@ -203,9 +199,7 @@ HurdleResult HurdleController::Compute(
     else recovery_visible_count_ = 0;
     if (recovery_visible_count_ >=
         std::max(1, config_.recovery_reacquire_min_hits)) {
-      mode_ = mode_ == HurdleMode::kRecoveryDown
-                  ? HurdleMode::kWaitCameraDown
-                  : HurdleMode::kApproach;
+      mode_ = HurdleMode::kApproach;
       result.mode = mode_;
       return result;
     }
