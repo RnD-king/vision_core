@@ -61,6 +61,8 @@ int main(int argc, char **argv) {
   Reject(text.str(), "min_box_width: 1.0", "min_box_width: -1.0");
   Reject(text.str(), "ball_confidence: 0.60", "ball_confidence: 1.1");
   Reject(text.str(), "ball_class_id: 1", "ball_class_id: -1");
+  Reject(text.str(), "ball_class_id: 1", "ball_class_id: 0");
+  Reject(text.str(), "hurdle_class_id: 4", "hurdle_class_id: 0");
   Reject(text.str(), "hurdle_class_id: 4", "hurdle_class_id: 3");
   Reject(text.str(), "missing_frame_limit: 5", "missing_frame_limit: -1");
   Reject(text.str(), "center_distance_weight: 1.0",

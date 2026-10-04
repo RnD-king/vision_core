@@ -71,10 +71,12 @@ changes; do not delete or weaken tests merely because an implementation fails.
 Standard verification:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$PWD/install"
 cmake --build build -j
 ctest --test-dir build --output-on-failure
-cmake --install build --prefix install
+cmake --install build
 ```
 
 ## Scope discipline

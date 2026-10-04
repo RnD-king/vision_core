@@ -171,17 +171,18 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
   Nonnegative(c.line_detection.min_box_height,
               "line_detection.min_box_height");
 
-  const std::array<int, 4> object_class_ids = {
-      c.object_targets.ball_class_id, c.object_targets.goal_class_id,
-      c.object_targets.backboard_class_id, c.object_targets.hurdle_class_id};
-  for (std::size_t i = 0; i < object_class_ids.size(); ++i) {
-    if (object_class_ids[i] < 0)
+  const std::array<int, 5> class_ids = {
+      c.line_detection.class_id, c.object_targets.ball_class_id,
+      c.object_targets.goal_class_id, c.object_targets.backboard_class_id,
+      c.object_targets.hurdle_class_id};
+  for (std::size_t i = 0; i < class_ids.size(); ++i) {
+    if (class_ids[i] < 0)
       throw std::runtime_error(
-          "vision algorithm object class IDs must be >= 0");
-    for (std::size_t j = i + 1; j < object_class_ids.size(); ++j) {
-      if (object_class_ids[i] == object_class_ids[j])
+          "vision algorithm class IDs must be >= 0");
+    for (std::size_t j = i + 1; j < class_ids.size(); ++j) {
+      if (class_ids[i] == class_ids[j])
         throw std::runtime_error(
-            "vision algorithm object class IDs must be unique");
+            "vision algorithm class IDs must be unique");
     }
   }
   Unit(c.object_targets.ball_confidence,
