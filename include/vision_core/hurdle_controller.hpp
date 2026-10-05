@@ -27,7 +27,6 @@ struct HurdleConfig {
   double tilt_trigger_v_norm{};
   int tilt_trigger_window{};
   int tilt_trigger_min_hits{};
-  double camera_motion_timeout_sec{};
   double hurdle_ignore_duration_sec{};
   int recovery_reacquire_min_hits{};
   double recovery_timeout_sec{};
@@ -56,7 +55,7 @@ struct HurdleResult {
 class HurdleController {
 public:
   HurdleController();
-  explicit HurdleController(const HurdleConfig &config);
+  HurdleController(const HurdleConfig &config, double camera_motion_timeout_sec);
   HurdleResult Compute(const std::optional<ObjectTarget> &target,
                        int image_width, int image_height, double now_sec,
                        const CameraFeedback &camera_feedback,
@@ -72,6 +71,7 @@ private:
   void ResetToLine(bool clear_ignore);
 
   HurdleConfig config_;
+  double camera_motion_timeout_sec_{};
   HurdleMode mode_{HurdleMode::kLineFollow};
   std::deque<bool> hit_history_;
   std::deque<bool> acquire_history_;

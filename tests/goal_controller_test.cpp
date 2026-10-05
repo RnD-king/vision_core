@@ -17,11 +17,11 @@ int main() {
   const auto p = EstimateGoalPoseFromBackboardDepths(50,1,40,1.1,60,.9,k);
   assert(p.valid && std::abs(p.x_m) < 1e-12);
   GoalConfig c{}; c.stable_window=c.stable_min_hits=1; c.lost_frames=2;
-  c.smooth_alpha=0; c.post_pickup_wait_sec=0; c.camera_motion_timeout_sec=3;
+  c.smooth_alpha=0; c.post_pickup_wait_sec=0;
   c.target_u_norm=.5; c.approach_u_deadband=.05; c.fine_adjust_start_z_m=.8;
   c.hoop_radius_m=.1; c.throwing_range_m=.5; c.position_tolerance_m=.05;
   c.fine_settle_duration_sec=0; c.shoot_yaw_limit_deg=30;
-  GoalController controller(c); controller.StartAfterPickup(0);
+  GoalController controller(c, 3.0); controller.StartAfterPickup(0);
   BallResult carrying; carrying.has_ball=true; carrying.mode=BallMode::kLineFollow;
   controller.UpdateBallState(carrying);
   ActionExecutionFeedback active; active.action_active=true;
@@ -51,7 +51,7 @@ int main() {
   assert(r.action.action==MissionAction::kShoot);
   assert(std::abs(r.action.target_yaw_deg)<=30);
 
-  GoalController timeout_controller(c);
+  GoalController timeout_controller(c, 3.0);
   timeout_controller.StartAfterPickup(0);
   timeout_controller.UpdateBallState(carrying);
   r=timeout_controller.Compute({}, {}, {},100,100,0,true,{},{});

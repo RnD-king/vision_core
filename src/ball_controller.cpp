@@ -18,9 +18,14 @@ ActionRequest Mission(MissionAction action) {
 }
 } // namespace
 
-BallController::BallController()
-    : BallController(LoadDefaultAlgorithmConfig().ball) {}
-BallController::BallController(const BallConfig &config) : config_(config) {}
+BallController::BallController() {
+  const auto config = LoadDefaultAlgorithmConfig();
+  config_ = config.ball;
+  camera_motion_timeout_sec_ = config.camera_motion_timeout_sec;
+}
+BallController::BallController(const BallConfig &config,
+                               double camera_motion_timeout_sec)
+    : config_(config), camera_motion_timeout_sec_(camera_motion_timeout_sec) {}
 
 const char *BallController::ModeName(BallMode mode) {
   switch (mode) {
@@ -205,7 +210,7 @@ BallResult BallController::Compute(
       settle_until_sec_ = now_sec + config_.fine_settle_duration_sec;
       result.mode = mode_;
       result.camera_request = CameraRequest::kNone;
-    } else if (now_sec - state_enter_sec_ >= config_.camera_motion_timeout_sec) {
+    } else if (now_sec - state_enter_sec_ >= camera_motion_timeout_sec_) {
       mode_ = BallMode::kFailed;
       result.mode = mode_;
       result.camera_request = CameraRequest::kNone;

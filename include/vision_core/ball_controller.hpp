@@ -35,7 +35,6 @@ struct BallConfig {
   double tilt_down_v_norm{};
   int tilt_down_window{};
   int tilt_down_min_hits{};
-  double camera_motion_timeout_sec{};
   int pickup_max_attempts{};
   double ball_ignore_duration_sec{};
   double fine_target_u_norm{};
@@ -74,7 +73,7 @@ struct BallResult {
 class BallController {
 public:
   BallController();
-  explicit BallController(const BallConfig &config);
+  BallController(const BallConfig &config, double camera_motion_timeout_sec);
   BallResult Compute(const std::optional<ObjectTarget> &ball_target,
                      int image_width, int image_height, double now_sec,
                      const CameraFeedback &camera_feedback,
@@ -97,6 +96,7 @@ private:
   void ResetToLine(bool clear_ignore);
 
   BallConfig config_;
+  double camera_motion_timeout_sec_{};
   BallMode mode_{BallMode::kLineFollow};
   std::deque<bool> hit_history_;
   std::deque<bool> upper_acquire_history_;

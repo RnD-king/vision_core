@@ -25,9 +25,14 @@ double Wrap(double angle) {
 }
 } // namespace
 
-GoalController::GoalController()
-    : GoalController(LoadDefaultAlgorithmConfig().goal) {}
-GoalController::GoalController(const GoalConfig &config) : config_(config) {}
+GoalController::GoalController() {
+  const auto config = LoadDefaultAlgorithmConfig();
+  config_ = config.goal;
+  camera_motion_timeout_sec_ = config.camera_motion_timeout_sec;
+}
+GoalController::GoalController(const GoalConfig &config,
+                               double camera_motion_timeout_sec)
+    : config_(config), camera_motion_timeout_sec_(camera_motion_timeout_sec) {}
 
 GoalPoseObservation EstimateGoalPoseFromEdgeDepths(
     double left_u_px, double left_depth_m, double right_u_px,
@@ -276,7 +281,7 @@ GoalResult GoalController::Compute(
       result.camera_request = CameraRequest::kNone;
       result.tracked = {};
       result.pose = {};
-    } else if (now_sec - state_enter_sec_ >= config_.camera_motion_timeout_sec) {
+    } else if (now_sec - state_enter_sec_ >= camera_motion_timeout_sec_) {
       mode_ = GoalMode::kFailed;
       result.mode = mode_;
       result.camera_request = CameraRequest::kNone;

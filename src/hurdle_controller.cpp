@@ -17,10 +17,14 @@ ActionRequest Mission(MissionAction action) {
 }
 } // namespace
 
-HurdleController::HurdleController()
-    : HurdleController(LoadDefaultAlgorithmConfig().hurdle) {}
-HurdleController::HurdleController(const HurdleConfig &config)
-    : config_(config) {}
+HurdleController::HurdleController() {
+  const auto config = LoadDefaultAlgorithmConfig();
+  config_ = config.hurdle;
+  camera_motion_timeout_sec_ = config.camera_motion_timeout_sec;
+}
+HurdleController::HurdleController(const HurdleConfig &config,
+                                   double camera_motion_timeout_sec)
+    : config_(config), camera_motion_timeout_sec_(camera_motion_timeout_sec) {}
 
 const char *HurdleController::ModeName(HurdleMode mode) {
   switch (mode) {
@@ -156,7 +160,7 @@ HurdleResult HurdleController::Compute(
       result.camera_request = CameraRequest::kNone;
       // CONTACT_WALK(20)은 protocol에만 예약한다. executor mapping 전까지 10.
       result.action = Locomotion(MissionAction::kStepForwardOne);
-    } else if (now_sec - state_enter_sec_ >= config_.camera_motion_timeout_sec) {
+    } else if (now_sec - state_enter_sec_ >= camera_motion_timeout_sec_) {
       mode_ = HurdleMode::kFailed;
       result.mode = mode_;
       result.camera_request = CameraRequest::kNone;

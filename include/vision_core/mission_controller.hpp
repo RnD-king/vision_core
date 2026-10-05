@@ -27,6 +27,8 @@ struct MissionControllerConfig {
   LineDetectionConfig line_detection;
   ObjectTargetConfig object_targets;
   ObjectAssociationConfig object_association;
+  // 모든 object mission의 camera settled 대기 제한 시간이다.
+  double camera_motion_timeout_sec{};
   // YOLO backboard 후보 중심의 aligned depth가 이 범위 안에 있어야 실제
   // backboard 관측으로 인정한다.
   double backboard_min_depth_m{};
@@ -59,6 +61,9 @@ struct MissionFrameInput {
   // false이면 인식/FSM과 기존 feedback 처리는 계속하지만 새 LINE action만
   // 시작하지 않는다. 튜닝 도구의 one-shot gate용이다.
   bool allow_new_line_action{true};
+  // false이면 특징은 계산하되 LINE 판단/recovery 상태는 동결한다.
+  // 기존 action의 coordinator ACK/READY/DONE 처리는 계속 수행한다.
+  bool advance_line_fsm{true};
   // 단발 튜닝처럼 여러 프레임에서 집계한 guide로 이번 LINE 판단만 수행한다.
   std::optional<LineGuide> line_decision_guide_override;
 };
@@ -99,6 +104,7 @@ struct PerceptionFrameInput {
   ActionExecutionFeedback action_feedback;
   CommandDeliveryFeedback delivery_feedback;
   bool allow_new_line_action{true};
+  bool advance_line_fsm{true};
   std::optional<LineGuide> line_decision_guide_override;
 };
 

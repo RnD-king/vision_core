@@ -103,8 +103,6 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
   Unit(c.ball.tilt_down_v_norm, "ball.tilt_down_v_norm");
   HitsWithinWindow(c.ball.tilt_down_min_hits, c.ball.tilt_down_window,
                    "ball.tilt_down_min_hits", "ball.tilt_down_window");
-  Nonnegative(c.ball.camera_motion_timeout_sec,
-              "ball.camera_motion_timeout_sec");
   PositiveInt(c.ball.pickup_max_attempts, "ball.pickup_max_attempts");
   Nonnegative(c.ball.ball_ignore_duration_sec,
               "ball.ball_ignore_duration_sec");
@@ -132,8 +130,6 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
                    c.hurdle.tilt_trigger_window,
                    "hurdle.tilt_trigger_min_hits",
                    "hurdle.tilt_trigger_window");
-  Nonnegative(c.hurdle.camera_motion_timeout_sec,
-              "hurdle.camera_motion_timeout_sec");
   Nonnegative(c.hurdle.hurdle_ignore_duration_sec,
               "hurdle.hurdle_ignore_duration_sec");
   PositiveInt(c.hurdle.recovery_reacquire_min_hits,
@@ -150,8 +146,6 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
   PositiveInt(c.goal.lost_frames, "goal.lost_frames");
   Unit(c.goal.smooth_alpha, "goal.smooth_alpha");
   Nonnegative(c.goal.post_pickup_wait_sec, "goal.post_pickup_wait_sec");
-  Nonnegative(c.goal.camera_motion_timeout_sec,
-              "goal.camera_motion_timeout_sec");
   Unit(c.goal.target_u_norm, "goal.target_u_norm");
   Unit(c.goal.approach_u_deadband, "goal.approach_u_deadband");
   Nonnegative(c.goal.fine_adjust_start_z_m, "goal.fine_adjust_start_z_m");
@@ -216,6 +210,7 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
               "command.action_ack_timeout_sec");
 
   Positive(c.backboard_min_depth_m, "mission.backboard_min_depth_m");
+  Nonnegative(c.camera_motion_timeout_sec, "mission.camera_motion_timeout_sec");
   Positive(c.backboard_max_depth_m, "mission.backboard_max_depth_m");
   if (c.backboard_min_depth_m > c.backboard_max_depth_m)
     throw std::runtime_error(
@@ -274,7 +269,6 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(b, "tilt_down_v_norm", c.ball.tilt_down_v_norm);
   Assign(b, "tilt_down_window", c.ball.tilt_down_window);
   Assign(b, "tilt_down_min_hits", c.ball.tilt_down_min_hits);
-  Assign(b, "camera_motion_timeout_sec", c.ball.camera_motion_timeout_sec);
   Assign(b, "pickup_max_attempts", c.ball.pickup_max_attempts);
   Assign(b, "ball_ignore_duration_sec", c.ball.ball_ignore_duration_sec);
   Assign(b, "fine_target_u_norm", c.ball.fine_target_u_norm);
@@ -296,7 +290,6 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(h, "tilt_trigger_v_norm", c.hurdle.tilt_trigger_v_norm);
   Assign(h, "tilt_trigger_window", c.hurdle.tilt_trigger_window);
   Assign(h, "tilt_trigger_min_hits", c.hurdle.tilt_trigger_min_hits);
-  Assign(h, "camera_motion_timeout_sec", c.hurdle.camera_motion_timeout_sec);
   Assign(h, "hurdle_ignore_duration_sec", c.hurdle.hurdle_ignore_duration_sec);
   Assign(h, "recovery_reacquire_min_hits", c.hurdle.recovery_reacquire_min_hits);
   Assign(h, "recovery_timeout_sec", c.hurdle.recovery_timeout_sec);
@@ -309,7 +302,6 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(g, "lost_frames", c.goal.lost_frames);
   Assign(g, "smooth_alpha", c.goal.smooth_alpha);
   Assign(g, "post_pickup_wait_sec", c.goal.post_pickup_wait_sec);
-  Assign(g, "camera_motion_timeout_sec", c.goal.camera_motion_timeout_sec);
   Assign(g, "target_u_norm", c.goal.target_u_norm);
   Assign(g, "approach_u_deadband", c.goal.approach_u_deadband);
   Assign(g, "fine_adjust_start_z_m", c.goal.fine_adjust_start_z_m);
@@ -345,6 +337,7 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(cmd, "first_action_id", c.command.first_action_id);
   Assign(cmd, "action_ack_timeout_sec", c.command.action_ack_timeout_sec);
   const auto m = a["mission"];
+  Assign(m, "camera_motion_timeout_sec", c.camera_motion_timeout_sec);
   Assign(m, "backboard_min_depth_m", c.backboard_min_depth_m);
   Assign(m, "backboard_max_depth_m", c.backboard_max_depth_m);
   Assign(m, "enable_ball", c.enable_ball);

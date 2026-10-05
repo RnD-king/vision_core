@@ -12,8 +12,7 @@ int main() {
   HurdleConfig c{}; c.stable_window = c.stable_min_hits = 1;
   c.lost_frames = 2; c.smooth_alpha = 1; c.acquire_min_v_norm = 0;
   c.tilt_trigger_v_norm = 0.75; c.tilt_trigger_window = c.tilt_trigger_min_hits = 1;
-  c.camera_motion_timeout_sec = 3;
-  HurdleController controller(c);
+  HurdleController controller(c, 3.0);
   auto r = controller.Compute(H(0.5), 100, 100, 0, {}, {});
   assert(r.mode == HurdleMode::kApproach);
   assert(r.action.action == MissionAction::kStepForwardFive);

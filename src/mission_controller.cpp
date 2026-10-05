@@ -36,8 +36,10 @@ MissionController::MissionController()
 MissionController::MissionController(const MissionControllerConfig &config)
     : config_(ValidatedConfig(config)),
       line_p2p_controller_(config_.line_p2p),
-      ball_controller_(config_.ball), hurdle_controller_(config_.hurdle),
-      goal_controller_(config_.goal), command_coordinator_(config_.command),
+      ball_controller_(config_.ball, config_.camera_motion_timeout_sec),
+      hurdle_controller_(config_.hurdle, config_.camera_motion_timeout_sec),
+      goal_controller_(config_.goal, config_.camera_motion_timeout_sec),
+      command_coordinator_(config_.command),
       ball_association_tracker_(config_.object_association),
       backboard_association_tracker_(config_.object_association),
       hurdle_association_tracker_(config_.object_association),
@@ -252,6 +254,7 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
     output.line_features = ComputeLineFeatures(
         input.line_centers, input.image_width, input.image_height, cfg);
     output.line_computed = true;
+    if (!input.advance_line_fsm) return;
     const bool pending = last_command_.action_id != 0 &&
         last_command_.mission == MissionType::kLine &&
         last_command_.action_category == ActionCategory::kLocomotion;
@@ -429,7 +432,7 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
   output.command = command_coordinator_.Compute(
       active_mission_, phase, request, camera_request,
       input.delivery_feedback, input.now_sec);
-  if (input.delivery_feedback.done &&
+  if (input.advance_line_fsm && input.delivery_feedback.done &&
       input.delivery_feedback.action_id == ready_line_action_id_)
     ready_line_action_id_ = 0;
   last_command_ = output.command;
@@ -553,6 +556,7 @@ PerceptionMissionFrameResult MissionController::StepPerception(
   prepared.action_feedback = input.action_feedback;
   prepared.delivery_feedback = input.delivery_feedback;
   prepared.allow_new_line_action = input.allow_new_line_action;
+  prepared.advance_line_fsm = input.advance_line_fsm;
   prepared.line_decision_guide_override = input.line_decision_guide_override;
   std::optional<double> center;
   if (std::isfinite(input.intrinsics.cx) && input.intrinsics.cx >= 0.0 &&

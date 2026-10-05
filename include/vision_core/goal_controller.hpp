@@ -26,7 +26,6 @@ struct GoalConfig {
   int lost_frames{};
   double smooth_alpha{};
   double post_pickup_wait_sec{};
-  double camera_motion_timeout_sec{};
   double target_u_norm{};
   double approach_u_deadband{};
   double fine_adjust_start_z_m{};
@@ -86,7 +85,7 @@ struct GoalResult {
 class GoalController {
 public:
   GoalController();
-  explicit GoalController(const GoalConfig &config);
+  GoalController(const GoalConfig &config, double camera_motion_timeout_sec);
   void StartAfterPickup(double now_sec);
   void SetHasBall(bool has_ball);
   void UpdateBallState(const BallResult &ball_result);
@@ -113,6 +112,7 @@ private:
   void ClearTracking();
 
   GoalConfig config_;
+  double camera_motion_timeout_sec_{};
   GoalMode mode_{GoalMode::kLineFollow};
   std::deque<bool> hit_history_;
   std::deque<bool> pose_hit_history_;

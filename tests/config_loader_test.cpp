@@ -32,8 +32,15 @@ int main(int argc, char **argv) {
   assert(c.line_p2p.recovery_turn_yaw_deg == 15);
   assert(c.goal.shoot_yaw_limit_deg == 30.0);
   assert(c.ball.fine_target_u_norm == 0.50);
+  assert(c.camera_motion_timeout_sec == 3.0);
   std::ifstream in(argv[1]); std::ostringstream text; text << in.rdbuf();
   Reject(text.str(), "offset_gain: 1.0", "offset_gain: .nan");
+  Reject(text.str(), "camera_motion_timeout_sec: 3.0",
+         "camera_motion_timeout_sec: -0.1");
+  Reject(text.str(), "camera_motion_timeout_sec: 3.0",
+         "camera_motion_timeout_sec: .nan");
+  Reject(text.str(), "camera_motion_timeout_sec: 3.0",
+         "camera_motion_timeout_sec: .inf");
   Reject(text.str(), "heading_gain: 1.0", "heading_gain: -1.0");
   Reject(text.str(), "steering_deadband: 0.10", "steering_deadband: -0.1");
   Reject(text.str(), "line_stable_min_hits: 7", "line_stable_min_hits: 11");

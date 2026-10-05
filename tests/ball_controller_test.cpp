@@ -41,12 +41,12 @@ int main() {
   c.lost_frames = 2; c.smooth_alpha = 1.0; c.far_u_des_norm = 0.5;
   c.approach_u_deadband = 0.05; c.upper_acquire_v_norm = 1.0;
   c.tilt_down_v_norm = 0.7; c.tilt_down_window = c.tilt_down_min_hits = 1;
-  c.camera_motion_timeout_sec = 3; c.fine_target_u_norm = 0.5;
+  c.fine_target_u_norm = 0.5;
   c.fine_target_v_norm = 0.7; c.fine_u_deadband = c.fine_v_deadband = 0.05;
   c.pickup_max_attempts = 2;
   c.recovery_timeout_sec = 5.0; c.recovery_reacquire_min_hits = 1;
   c.recovery_center_tolerance_norm = 0.05;
-  BallController controller(c);
+  BallController controller(c, 3.0);
   auto r = controller.Compute(Ball(0.3, 0.3), 100, 100, 0, {}, {});
   assert(r.mode == BallMode::kApproachBall);
   assert(r.action.action == MissionAction::kStepForwardLeft);
@@ -72,7 +72,7 @@ int main() {
   assert(r.action.action == MissionAction::kRecatch);
 
   // DOWN fine recovery는 이미 내려간 카메라를 다시 요청하지 않고 TURN만 한다.
-  BallController recovery(c);
+  BallController recovery(c, 3.0);
   r = recovery.Compute(Ball(0.3, 0.3), 100, 100, 0, {}, {});
   r = recovery.Compute(Ball(0.3, 0.8), 100, 100, .1, {}, done);
   r = recovery.Compute(Ball(0.3, 0.6), 100, 100, .2, down, {});
@@ -100,7 +100,7 @@ int main() {
 
   // 9 frame까지는 7회 검출됐더라도 판정하지 않고, 10번째 frame에서만
   // 공이 남아 있다고 판단하여 두 번째 pickup을 시도한다.
-  BallController seven_hits(verify_config);
+  BallController seven_hits(verify_config, 3.0);
   r = EnterPickupVerification(seven_hits, 10.0);
   for (int i = 0; i < 7; ++i)
     r = seven_hits.Compute(Ball(0.5, 0.7), 100, 100, 12.0 + 0.1 * i,
@@ -130,7 +130,7 @@ int main() {
 
   // 정확히 10 frame 중 6회만 검출되면 7-hit 실패 조건의 여집합으로
   // pickup 성공을 확정한다.
-  BallController six_hits(verify_config);
+  BallController six_hits(verify_config, 3.0);
   r = EnterPickupVerification(six_hits, 20.0);
   for (int i = 0; i < 6; ++i)
     r = six_hits.Compute(Ball(0.5, 0.7), 100, 100, 22.0 + 0.1 * i,

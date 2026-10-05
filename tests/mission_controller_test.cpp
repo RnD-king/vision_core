@@ -243,5 +243,108 @@ int main() {
   in=Frame(0); in.line_decision_guide_override=Guide(.5);
   r=tuning.Step(in);
   assert(r.command.action==MissionAction::kStepForwardFive);
+
+  // Tuning observations compute features but never start production recovery.
+  MissionController frozen(c);
+  for (int i=0; i<=30; ++i) {
+    in=Frame(i); in.line_centers.clear();
+    in.advance_line_fsm=false; in.allow_new_line_action=false;
+    r=frozen.Step(in);
+    assert(r.line_computed && !r.line_features.guide.valid);
+    assert(!r.line_in_recovery && r.command.mission_phase==0);
+    assert(r.command.action_id==0);
+  }
+  // No hidden active observation remains to block the next trial's tuning.
+  assert(frozen.UpdateLineP2pTuning(c.line_p2p));
+  in=Frame(31); in.line_decision_guide_override=Guide(-.3);
+  r=frozen.Step(in);
+  assert(r.command.action==MissionAction::kStepForwardLeft);
+  const auto frozen_id=r.command.action_id;
+  in=Frame(32); in.line_centers.clear();
+  in.advance_line_fsm=false; in.allow_new_line_action=false;
+  in.delivery_feedback={frozen_id,true,false,false};
+  r=frozen.Step(in);
+  assert(r.command.action_id==frozen_id);
+  assert(r.command.control_phase==ControlPhase::kWaitingActionDone);
+  in.now_sec=33; in.delivery_feedback={frozen_id,true,false,true};
+  r=frozen.Step(in);
+  assert(r.command.action_id==frozen_id); // No READY successor.
+  assert(r.command.control_phase==ControlPhase::kWaitingActionDone);
+  for (int i=34; i<45; ++i) {
+    in.now_sec=i; in.delivery_feedback={};
+    r=frozen.Step(in);
+    assert(!r.line_in_recovery && r.command.action_id==frozen_id);
+  }
+  in.now_sec=45; in.delivery_feedback={frozen_id,true,true,false};
+  r=frozen.Step(in);
+  assert(r.command.action_id==0 && !r.line_in_recovery);
+  assert(frozen.UpdateLineP2pTuning(c.line_p2p));
+  in=Frame(46); in.line_decision_guide_override=Guide(.3);
+  r=frozen.Step(in);
+  assert(r.command.action==MissionAction::kStepForwardRight);
+  assert(r.command.action_id>frozen_id); // No Reset between trials.
+
+  // PerceptionFrameInput must forward the same freeze contract.
+  MissionController frozen_perception(c);
+  PerceptionFrameInput observation;
+  observation.image_width=640; observation.image_height=480;
+  observation.command_transport_enabled=true;
+  observation.advance_line_fsm=false;
+  // Even with allow_new_line_action=true, a frozen FSM makes no decisions.
+  for (int i=0; i<20; ++i) {
+    observation.now_sec=i;
+    const auto p=frozen_perception.StepPerception(observation);
+    assert(p.mission.line_computed && !p.mission.line_in_recovery);
+    assert(p.mission.command.action_id==0);
+  }
+  observation.now_sec=20; observation.advance_line_fsm=true;
+  observation.line_decision_guide_override=Guide(0);
+  const auto p=frozen_perception.StepPerception(observation);
+  assert(p.mission.command.action==MissionAction::kStepForwardFive);
+
+  // One common timeout is injected into all three object controllers. Use a
+  // non-default value so an accidental per-mission/default 3s is detectable.
+  auto camera_config=c;
+  camera_config.camera_motion_timeout_sec=.5;
+  camera_config.enable_ball=true;
+  camera_config.ball.stable_window=camera_config.ball.stable_min_hits=1;
+  camera_config.ball.smooth_alpha=1;
+  camera_config.ball.upper_acquire_v_norm=1;
+  camera_config.ball.tilt_down_window=camera_config.ball.tilt_down_min_hits=1;
+  MissionController ball_timeout(camera_config);
+  in=Frame(0); in.ball_target=Ball(.5,.8);
+  r=ball_timeout.Step(in);
+  assert(r.ball.mode==BallMode::kWaitCameraDown);
+  in.now_sec=.4; r=ball_timeout.Step(in);
+  assert(r.ball.mode==BallMode::kWaitCameraDown);
+  in.now_sec=.5; r=ball_timeout.Step(in);
+  assert(r.ball.mode==BallMode::kFailed);
+
+  camera_config.enable_ball=false; camera_config.enable_hurdle=true;
+  camera_config.hurdle.stable_window=camera_config.hurdle.stable_min_hits=1;
+  camera_config.hurdle.smooth_alpha=1;
+  camera_config.hurdle.acquire_min_v_norm=0;
+  camera_config.hurdle.tilt_trigger_window=
+      camera_config.hurdle.tilt_trigger_min_hits=1;
+  MissionController hurdle_timeout(camera_config);
+  in=Frame(0); in.hurdle_target=Ball(.5,.8);
+  r=hurdle_timeout.Step(in);
+  assert(r.hurdle.mode==HurdleMode::kWaitCameraDown);
+  in.now_sec=.4; r=hurdle_timeout.Step(in);
+  assert(r.hurdle.mode==HurdleMode::kWaitCameraDown);
+  in.now_sec=.5; r=hurdle_timeout.Step(in);
+  assert(r.hurdle.mode==HurdleMode::kFailed);
+
+  camera_config.enable_hurdle=false; camera_config.enable_goal=true;
+  camera_config.initial_has_ball=true;
+  camera_config.goal.post_pickup_wait_sec=0;
+  camera_config.line.line_stable_window=camera_config.line.line_stable_min_hits=1;
+  MissionController goal_timeout(camera_config);
+  in=Frame(0); r=goal_timeout.Step(in);
+  assert(r.goal.mode==GoalMode::kWaitCameraGoal);
+  in.now_sec=.4; r=goal_timeout.Step(in);
+  assert(r.goal.mode==GoalMode::kWaitCameraGoal);
+  in.now_sec=.5; r=goal_timeout.Step(in);
+  assert(r.goal.mode==GoalMode::kFailed);
   return 0;
 }
