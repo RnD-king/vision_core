@@ -31,6 +31,23 @@ static ObjectTarget Ball(double u_norm, double v_norm) {
 int main() {
   auto c=LoadDefaultAlgorithmConfig();
   c.enable_ball=c.enable_hurdle=c.enable_goal=false;
+  MissionController two_point_controller(c);
+  auto two_point_input=Frame(0);
+  two_point_input.line_centers.resize(2);
+  auto two_point_result=two_point_controller.Step(two_point_input);
+  assert(!two_point_result.line_features.guide.valid);
+  assert(two_point_result.line_in_recovery);
+  assert(two_point_result.command.action_id==0);
+  assert(two_point_result.command.mission_phase==1); // FailureObserve.
+  for (int i=1;i<=4;++i) {
+    two_point_input=Frame(.4*i);
+    two_point_result=two_point_controller.Step(two_point_input);
+    assert(two_point_result.command.action_id==0);
+  }
+  two_point_input=Frame(2.0);
+  two_point_result=two_point_controller.Step(two_point_input);
+  assert(!two_point_result.line_in_recovery);
+  assert(two_point_result.command.action==MissionAction::kStepForwardFive);
   MissionController controller(c);
   auto in=Frame(0); auto r=controller.Step(in);
   assert(r.command.action==MissionAction::kStepForwardFive);

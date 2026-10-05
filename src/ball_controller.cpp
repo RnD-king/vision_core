@@ -232,7 +232,7 @@ BallResult BallController::Compute(
     }
     result.action = FineAction();
     if (result.action.action == MissionAction::kPickBall) {
-      pickup_attempt_count_ = 1;
+      ++pickup_attempt_count_;
       result.pickup_attempt_count = pickup_attempt_count_;
       mode_ = BallMode::kPickupBall;
       result.mode = mode_;
@@ -270,11 +270,12 @@ BallResult BallController::Compute(
       result.action = Mission(MissionAction::kDefaultPosition);
     } else {
       if (pickup_attempt_count_ < std::max(1, config_.pickup_max_attempts)) {
-        ++pickup_attempt_count_;
-        result.pickup_attempt_count = pickup_attempt_count_;
-        mode_ = BallMode::kPickupBall;
+        // 공이 이동했을 수 있으므로 새 위치에서 다시 fine 정렬한다.
+        // attempt는 실제 다음 PICK을 발행할 때만 증가한다.
+        mode_ = BallMode::kFineAdjustForPickup;
+        ClearTracking();
+        settle_until_sec_ = now_sec + config_.fine_settle_duration_sec;
         result.mode = mode_;
-        result.action = Mission(MissionAction::kPickBall);
       } else {
         pickup_failed_ = true;
         result.pickup_failed = true;

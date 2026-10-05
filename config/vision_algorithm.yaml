@@ -1,6 +1,7 @@
 vision_algorithm:
   line_features:
     max_centers: 8
+    guide_min_points: 3
     image_center_u: 320.0
     curve_min_points: 5
     curve_min_v_span_px: 80.0

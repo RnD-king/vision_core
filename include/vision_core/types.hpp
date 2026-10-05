@@ -20,6 +20,8 @@ struct Intrinsics {
 
 struct FeatureConfig {
   int max_centers{};
+  // O/H guide는 최소 3개의 유한 line center를 요구한다.
+  int guide_min_points{};
   double image_center_u{};
   int curve_min_points{};
   double curve_min_v_span_px{};

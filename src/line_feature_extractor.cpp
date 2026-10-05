@@ -82,11 +82,14 @@ double WrapAngle(double angle) {
 LineGuide ComputeLineGuide(const std::vector<Point2> &points, double cx,
                            double denom, const FeatureConfig &cfg) {
   LineGuide guide;
-  if (points.size() < 2)
+  if (cfg.guide_min_points < 3 ||
+      points.size() < static_cast<std::size_t>(cfg.guide_min_points))
     return guide;
 
+  const int desired_near_points =
+      std::max(cfg.guide_min_points, cfg.curve_local_fit_points);
   const std::size_t local_count = std::min(
-      static_cast<std::size_t>(std::max(3, cfg.curve_local_fit_points)),
+      static_cast<std::size_t>(desired_near_points),
       points.size());
   const std::size_t far_begin = points.size() - local_count;
   const LineFit near_fit = FitLine(points, 0, local_count);
@@ -120,7 +123,6 @@ LineGuide ComputeLineGuide(const std::vector<Point2> &points, double cx,
 
   // confidence는 정상 P2P 제어에 쓰는 가까운 O/H fit 품질이다. 먼 점군
   // curvature fit의 성공/실패나 잔차와 결합하지 않는다.
-  const int desired_near_points = std::max(3, cfg.curve_local_fit_points);
   const double point_confidence =
       Clamp(static_cast<double>(local_count) /
                 static_cast<double>(desired_near_points),

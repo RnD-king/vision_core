@@ -467,25 +467,39 @@ PerceptionMissionFrameResult MissionController::StepPerception(
       ExtractLineCenters(detections, config_.line_detection);
   output.perception.line_centers = output.perception.raw_line_centers;
   ObjectTargetSelection selection;
+  const auto lower_raw_rank =
+      [](const ObjectTargetCandidate &a, const ObjectTargetCandidate &b) {
+        return a.target.confidence == b.target.confidence
+            ? a.target.area_px < b.target.area_px
+            : a.target.confidence < b.target.confidence;
+      };
   const auto goals = ExtractObjectTargetCandidates(
       detections, config_.object_targets.goal_class_id,
       config_.object_targets.goal_confidence, config_.object_targets);
   if (!goals.empty()) {
     const auto best = std::max_element(
-        goals.begin(), goals.end(),
-        [](const ObjectTargetCandidate &a, const ObjectTargetCandidate &b) {
-          return a.target.confidence == b.target.confidence
-              ? a.target.area_px < b.target.area_px
-              : a.target.confidence < b.target.confidence;
-        });
+        goals.begin(), goals.end(), lower_raw_rank);
     selection.targets.goal = best->target;
     selection.indices.goal = best->detection_index;
   }
-  const auto ball = ball_association_tracker_.Update(
-      ExtractObjectTargetCandidates(detections,
-          config_.object_targets.ball_class_id,
-          config_.object_targets.ball_confidence, config_.object_targets),
-      input.image_width, input.image_height);
+  const auto ball_candidates = ExtractObjectTargetCandidates(
+      detections, config_.object_targets.ball_class_id,
+      config_.object_targets.ball_confidence, config_.object_targets);
+  ObjectAssociationSelection ball;
+  if (active_mission_ == MissionType::kBall &&
+      ball_result_.mode == BallMode::kVerifyPickupObservation) {
+    // Verification asks whether a ball remains, not whether its old identity
+    // matches. Reset so the next normal frame can acquire the new position.
+    ball_association_tracker_.Reset();
+    if (!ball_candidates.empty()) {
+      const auto best = std::max_element(
+          ball_candidates.begin(), ball_candidates.end(), lower_raw_rank);
+      ball = {best->target, best->detection_index};
+    }
+  } else {
+    ball = ball_association_tracker_.Update(
+        ball_candidates, input.image_width, input.image_height);
+  }
   const auto board = backboard_association_tracker_.Update(
       ExtractObjectTargetCandidates(detections,
           config_.object_targets.backboard_class_id,

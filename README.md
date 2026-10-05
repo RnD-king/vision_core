@@ -28,6 +28,9 @@ LineGuide를 집계해 같은 direct selector로 action 하나만 예약하고, 
 
 ## LINE recovery
 
+하단 O/H guide는 최소 3개 line center가 있어야 valid다
+(`line_features.guide_min_points: 3`). 2점 이하는 기존 failure/recovery로 처리한다.
+
 - 첫 실패: 2초 stationary observation
 - 유효 O/H 표본 5개 이상: 평균 guide로 정상 복귀
 - 5개 미만 + 방향 기억: 같은 방향 TURN 15도 후 2초 재관측, 최대 5회
@@ -41,6 +44,9 @@ LineGuide를 집계해 같은 direct selector로 action 하나만 예약하고, 
 
 - BALL: 원거리 direct cruise → 카메라 DOWN → lateral 우선 fine → 전후 보정
   → PICK_BALL → 한 번 STEP_BACK → 카메라 FORWARD → LINE recovery
+  (RECATCH 후 10-frame verification에서 7회 이상 검출되면 남은 attempt에
+  한해 FineAdjust로 복귀한다. 이 관찰 상태에서만 association 없이 raw 최상위
+  ball 후보를 사용하며, 다음 일반 tracking은 새 identity를 acquire한다.)
 - HURDLE: F5 반복 → raw v 0.75, 10-window/7-hit latch → 현재 action DONE
   → camera DOWN → STEP_FORWARD_ONE(10) → HUDDLE(16)
 - GOAL: camera GOAL → backboard RGB-D geometry → 거리 우선 fine → shoot yaw

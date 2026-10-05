@@ -33,8 +33,13 @@ int main(int argc, char **argv) {
   assert(c.goal.shoot_yaw_limit_deg == 30.0);
   assert(c.ball.fine_target_u_norm == 0.50);
   assert(c.camera_motion_timeout_sec == 3.0);
+  assert(c.line_features.guide_min_points == 3);
   std::ifstream in(argv[1]); std::ostringstream text; text << in.rdbuf();
   Reject(text.str(), "offset_gain: 1.0", "offset_gain: .nan");
+  Reject(text.str(), "guide_min_points: 3", "guide_min_points: 2");
+  Reject(text.str(), "guide_min_points: 3", "guide_min_points: 9");
+  Reject(text.str(), "guide_min_points: 3", "guide_min_points: .nan");
+  Reject(text.str(), "guide_min_points: 3", "");
   Reject(text.str(), "camera_motion_timeout_sec: 3.0",
          "camera_motion_timeout_sec: -0.1");
   Reject(text.str(), "camera_motion_timeout_sec: 3.0",

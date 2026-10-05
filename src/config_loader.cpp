@@ -61,6 +61,10 @@ void HitsWithinWindow(int hits, int window, const char *hits_key,
 
 void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
   PositiveInt(c.line_features.max_centers, "line_features.max_centers");
+  if (c.line_features.guide_min_points < 3 ||
+      c.line_features.guide_min_points > c.line_features.max_centers)
+    throw std::runtime_error(
+        "line_features.guide_min_points must be >= 3 and <= max_centers");
   if (!std::isfinite(c.line_features.image_center_u))
     throw std::runtime_error(
         "vision algorithm key 'line_features.image_center_u' must be finite");
@@ -238,6 +242,7 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
 
   const auto f = a["line_features"];
   Assign(f, "max_centers", c.line_features.max_centers);
+  Assign(f, "guide_min_points", c.line_features.guide_min_points);
   Assign(f, "image_center_u", c.line_features.image_center_u);
   Assign(f, "curve_min_points", c.line_features.curve_min_points);
   Assign(f, "curve_min_v_span_px", c.line_features.curve_min_v_span_px);
