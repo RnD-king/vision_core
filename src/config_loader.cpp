@@ -106,8 +106,6 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
   Nonnegative(c.ball.camera_motion_timeout_sec,
               "ball.camera_motion_timeout_sec");
   PositiveInt(c.ball.pickup_max_attempts, "ball.pickup_max_attempts");
-  PositiveInt(c.ball.pickup_success_missing_frames,
-              "ball.pickup_success_missing_frames");
   Nonnegative(c.ball.ball_ignore_duration_sec,
               "ball.ball_ignore_duration_sec");
   Unit(c.ball.fine_target_u_norm, "ball.fine_target_u_norm");
@@ -278,7 +276,6 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(b, "tilt_down_min_hits", c.ball.tilt_down_min_hits);
   Assign(b, "camera_motion_timeout_sec", c.ball.camera_motion_timeout_sec);
   Assign(b, "pickup_max_attempts", c.ball.pickup_max_attempts);
-  Assign(b, "pickup_success_missing_frames", c.ball.pickup_success_missing_frames);
   Assign(b, "ball_ignore_duration_sec", c.ball.ball_ignore_duration_sec);
   Assign(b, "fine_target_u_norm", c.ball.fine_target_u_norm);
   Assign(b, "fine_target_v_norm", c.ball.fine_target_v_norm);

@@ -252,13 +252,18 @@ BallResult BallController::Compute(
     }
     return result;
   case BallMode::kVerifyPickupObservation:
-    if (lost_count_ >= std::max(1, config_.pickup_success_missing_frames)) {
+    if (static_cast<int>(hit_history_.size()) <
+        std::max(1, config_.stable_window))
+      return result;
+    if (static_cast<int>(std::count(hit_history_.begin(),
+                                    hit_history_.end(), true)) <
+        std::max(1, config_.stable_min_hits)) {
       has_ball_ = true;
       mode_ = BallMode::kStandUpAfterPickup;
       result.mode = mode_;
       result.has_ball = true;
       result.action = Mission(MissionAction::kDefaultPosition);
-    } else if (tracked_.stable && tracked_.visible) {
+    } else {
       if (pickup_attempt_count_ < std::max(1, config_.pickup_max_attempts)) {
         ++pickup_attempt_count_;
         result.pickup_attempt_count = pickup_attempt_count_;

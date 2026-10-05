@@ -37,7 +37,6 @@ struct BallConfig {
   int tilt_down_min_hits{};
   double camera_motion_timeout_sec{};
   int pickup_max_attempts{};
-  int pickup_success_missing_frames{};
   double ball_ignore_duration_sec{};
   double fine_target_u_norm{};
   double fine_target_v_norm{};
