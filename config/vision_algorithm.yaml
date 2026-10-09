@@ -16,6 +16,7 @@ vision_algorithm:
     offset_gain: 1.0
     heading_gain: 1.0
     steering_deadband: 0.10
+    ready_lead_sec: 0.25  # Match forward_walk; estimate the 40% sampling point
     failure_observation_sec: 2.0
     failure_min_valid_samples: 5
     no_evidence_max_retries: 5

@@ -285,7 +285,10 @@ MissionFrameResult MissionController::StepWithLineImageCenter(
       if (feedback && (input.delivery_feedback.ready || done) &&
           ready_line_action_id_ != last_command_.action_id) {
         const auto aggregate = line_guide_accumulator_.Finish(
-            last_command_.action_id, input.now_sec);
+            last_command_.action_id, input.now_sec,
+            input.delivery_feedback.ready && !done
+                ? config_.line_p2p.ready_lead_sec : 0.0);
+        output.line_window_stats = line_guide_accumulator_.LastStats();
         if (aggregate) {
           decision = *aggregate;
           line_failure_pending_done_ = false;

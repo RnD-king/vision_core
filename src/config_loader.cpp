@@ -83,6 +83,7 @@ void ValidateAlgorithmConfig(const MissionControllerConfig &c) {
   Nonnegative(c.line_p2p.offset_gain, "line_p2p.offset_gain");
   Nonnegative(c.line_p2p.heading_gain, "line_p2p.heading_gain");
   Nonnegative(c.line_p2p.steering_deadband, "line_p2p.steering_deadband");
+  Nonnegative(c.line_p2p.ready_lead_sec, "line_p2p.ready_lead_sec");
   Nonnegative(c.line_p2p.failure_observation_sec,
               "line_p2p.failure_observation_sec");
   PositiveInt(c.line_p2p.failure_min_valid_samples,
@@ -257,6 +258,7 @@ MissionControllerConfig LoadAlgorithmConfig(const std::string &path) {
   Assign(lp, "offset_gain", c.line_p2p.offset_gain);
   Assign(lp, "heading_gain", c.line_p2p.heading_gain);
   Assign(lp, "steering_deadband", c.line_p2p.steering_deadband);
+  Assign(lp, "ready_lead_sec", c.line_p2p.ready_lead_sec);
   Assign(lp, "failure_observation_sec", c.line_p2p.failure_observation_sec);
   Assign(lp, "failure_min_valid_samples", c.line_p2p.failure_min_valid_samples);
   Assign(lp, "no_evidence_max_retries", c.line_p2p.no_evidence_max_retries);

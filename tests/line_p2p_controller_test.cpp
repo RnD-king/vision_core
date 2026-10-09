@@ -76,13 +76,33 @@ int main() {
   accumulator.Add(7, 4.0, Guide(0.40, 0.40, 0.40, false));
   const auto accumulated = accumulator.Finish(7, 4.0);
   assert(accumulated.has_value());
-  // O/H는 후반 표본 1:2:3 가중 평균, curvature는 유효한 3초 표본만 쓴다.
-  const double expected = 2.0 / 6.0;
+  // At 40% of 4s, discard 0s and 1s. Weight 2s/3s/4s by phase.
+  const double w2 = 1.0 + 2.0 * (2.0 - 1.6) / 2.4;
+  const double w3 = 1.0 + 2.0 * (3.0 - 1.6) / 2.4;
+  const double w4 = 3.0;
+  const double expected = (0.20*w2 + 0.30*w3 + 0.40*w4) / (w2+w3+w4);
+  const auto counts = accumulator.LastStats();
+  assert(counts && counts->total_frames == 5 && counts->valid_frames == 5);
+  assert(counts->window_frames == 3 && counts->used_frames == 3);
   assert(std::abs(accumulated->offset - expected) < kEps);
   assert(std::abs(accumulated->heading_rad - expected) < kEps);
   assert(accumulated->curvature_valid);
   assert(std::abs(accumulated->curvature_rad - 0.30) < kEps);
 
+  accumulator.Begin(70, 10.0);
+  accumulator.Add(70, 10.0, Guide(-1.0, 0.0, 0.0));
+  accumulator.Add(70, 10.7, Guide(-1.0, 0.0, 0.0));
+  accumulator.Add(70, 11.0, Guide(1.0, 0.0, 0.0));
+  auto invalid_frame = Guide(0.0, 0.0, 0.0); invalid_frame.valid = false;
+  accumulator.Add(70, 11.3, invalid_frame);
+  accumulator.Add(70, 11.75, Guide(1.0, 0.0, 0.0));
+  const auto ready_average = accumulator.Finish(70, 11.75, 0.25);
+  const auto ready_stats = accumulator.LastStats();
+  assert(ready_average && ready_average->offset > 0.99);
+  assert(ready_stats && ready_stats->total_frames == 5);
+  assert(ready_stats->valid_frames == 4 && ready_stats->window_frames == 3);
+  assert(ready_stats->used_frames == 2);
+  assert(std::abs(ready_stats->window_start_sec - 10.8) < kEps);
   accumulator.Begin(8, 5.0);
   accumulator.Add(8, 5.0, Guide(-0.30, -0.20, -0.10, false));
   accumulator.Add(8, 5.5, Guide(0.30, 0.20, 0.10, false));

@@ -73,6 +73,7 @@ struct MissionFrameResult {
   MissionType active_mission{MissionType::kLine};
   Features line_features;
   bool line_computed{false};
+  std::optional<LineWindowStats> line_window_stats;
   bool line_in_recovery{true};
   bool has_ball{false};
   BallResult ball;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <optional>
 #include <vector>
 
@@ -14,6 +15,7 @@ struct LineP2pConfig {
   double offset_gain{};
   double heading_gain{};
   double steering_deadband{};
+  double ready_lead_sec{}; // Matches the motion executor's READY remaining time.
   // 판단 실패 또는 recovery 회전 뒤 stationary re-observation 시간이다.
   double failure_observation_sec{};
   // 이 개수 이상의 유효 O/H 표본만 정상 LINE 판단에 사용한다.
@@ -35,13 +37,20 @@ private:
   LineP2pConfig config_;
 };
 
-// locomotion action 하나가 실행되는 동안 LineGuide를 모은다. DONE 시점에 실제
-// 수집 시간의 후반 50%만 남기고, 끝에 가까울수록 1->3 선형 가중치를 준다.
+// Keep the 40%-to-READY window of long LINE motion; later valid guides get 1->3 weight.
+struct LineWindowStats {
+  std::uint64_t action_id{0};
+  std::size_t total_frames{0}, valid_frames{0}, window_frames{0}, used_frames{0};
+  double estimated_motion_sec{0.0};
+  double window_start_sec{0.0}, window_end_sec{0.0}, remaining_sec{0.0};
+};
 class LineGuideAccumulator {
 public:
   void Begin(std::uint64_t action_id, double now_sec);
   void Add(std::uint64_t action_id, double now_sec, const LineGuide &guide);
-  std::optional<LineGuide> Finish(std::uint64_t action_id, double now_sec);
+  std::optional<LineGuide> Finish(std::uint64_t action_id, double now_sec,
+                                  double estimated_remaining_sec = 0.0);
+  std::optional<LineWindowStats> LastStats() const { return last_stats_; }
   // 짧은 action 뒤의 고정 관측 구간은 전체 유효 표본을 동일 가중 평균한다.
   std::optional<LineGuide> FinishAll(std::uint64_t action_id);
   void Reset();
@@ -56,6 +65,8 @@ private:
   std::uint64_t action_id_{0};
   double begin_sec_{0.0};
   std::vector<Sample> samples_;
+  std::vector<double> frame_times_;
+  std::optional<LineWindowStats> last_stats_;
 };
 
 } // namespace vision_core
